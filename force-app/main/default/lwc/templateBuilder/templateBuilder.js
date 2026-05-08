@@ -15,7 +15,10 @@ const nextId = () => `b${_idCounter++}`;
 const COLUMN_COUNT_OPTIONS = [
     { label: '1 column', value: '1' },
     { label: '2 columns', value: '2' },
-    { label: '3 columns', value: '3' }
+    { label: '3 columns', value: '3' },
+    { label: '4 columns', value: '4' },
+    { label: '5 columns', value: '5' },
+    { label: '6 columns', value: '6' }
 ];
 const SIGNATURE_TYPE_OPTIONS = [
     { label: 'Patient', value: 'Patient' },
@@ -130,7 +133,10 @@ export default class TemplateBuilder extends LightningElement {
             index: String(i),
             isText: s.kind === 'text',
             isToken: s.kind === 'token',
-            value: s.value
+            value: s.value,
+            isEmptyToken: s.kind === 'token' && !s.value,
+            boldVariant: s.bold ? 'brand' : 'border',
+            italicVariant: s.italic ? 'brand' : 'border'
         }));
     }
 
@@ -330,8 +336,12 @@ export default class TemplateBuilder extends LightningElement {
             stage = 'applying blocks';
             this.blocks = newBlocks;
             this.selectedBlockId = null;
+            const matched = this._lastAutoMatchCount || 0;
+            const matchedSuffix = matched > 0
+                ? ` Auto-matched ${matched} merge field${matched === 1 ? '' : 's'} by label.`
+                : '';
             this.toast('success', 'Document imported',
-                `Extracted ${newBlocks.length} block${newBlocks.length === 1 ? '' : 's'} from ${file.name}. Now drop fields onto the text blocks.`);
+                `Extracted ${newBlocks.length} block${newBlocks.length === 1 ? '' : 's'} from ${file.name}.${matchedSuffix} Drop fields onto the text blocks to fill remaining slots.`);
             this.schedulePreview();
         } catch (e) {
             /* eslint-disable no-console */
@@ -420,7 +430,7 @@ export default class TemplateBuilder extends LightningElement {
     }
 
     async parseDocx(arrayBuffer) {
-        const mammoth = window.mammoth || globalThis.mammoth;
+        const mammoth = this.findGlobal('mammoth');
         if (!mammoth) {
             throw new Error('mammoth library did not register on window after loadScript. ' +
                 'This usually means Lightning Web Security blocked it.');
@@ -431,7 +441,18 @@ export default class TemplateBuilder extends LightningElement {
         const result = await mammoth.convertToHtml({ arrayBuffer });
         // eslint-disable-next-line no-console
         if (result.messages?.length) console.log('[BUILDER] mammoth messages:', result.messages);
-        return htmlStringToBlocks(result.value || '');
+        let blocks = htmlStringToBlocks(result.value || '');
+        // Two-pass: try to auto-match empty token spans to fields on the target object
+        const matched = autoMatchTokens(blocks, this.objMeta?.fields || []);
+        blocks = matched.blocks;
+        if (matched.matchCount > 0) {
+            // eslint-disable-next-line no-console
+            console.log('[BUILDER] auto-matched', matched.matchCount, 'fields from labels');
+            this._lastAutoMatchCount = matched.matchCount;
+        } else {
+            this._lastAutoMatchCount = 0;
+        }
+        return blocks;
     }
 
     async parsePdf(arrayBuffer) {
@@ -508,13 +529,20 @@ export default class TemplateBuilder extends LightningElement {
     }
 
     appendTokenSpanToBlock(blockId, fieldApi) {
-        this.blocks = updateBlockDeep(this.blocks, blockId, b => ({
-            ...b,
-            props: {
-                ...b.props,
-                spans: [...(b.props.spans || []), { kind: 'token', value: fieldApi }]
+        this.blocks = updateBlockDeep(this.blocks, blockId, b => {
+            const spans = [...(b.props.spans || [])];
+            // If the block already has an EMPTY token span (placeholder from a
+            // "Label: ___" import), fill the LAST one instead of appending.
+            // This makes dropping a field on an imported labeled block "just work".
+            for (let i = spans.length - 1; i >= 0; i--) {
+                if (spans[i].kind === 'token' && !spans[i].value) {
+                    spans[i] = { ...spans[i], value: fieldApi };
+                    return { ...b, props: { ...b.props, spans } };
+                }
             }
-        }));
+            spans.push({ kind: 'token', value: fieldApi });
+            return { ...b, props: { ...b.props, spans } };
+        });
         this.selectedBlockId = blockId;
         this.schedulePreview();
     }
@@ -588,6 +616,25 @@ export default class TemplateBuilder extends LightningElement {
         const block = this.selectedBlock;
         if (!block) return;
         const spans = [...(block.props.spans || []), span];
+        this.applySpans(block.id, spans);
+    }
+
+    handleSpanToggleBold(event) {
+        const idx = parseInt(event.currentTarget.dataset.spanIndex, 10);
+        this.toggleSpanFlag(idx, 'bold');
+    }
+
+    handleSpanToggleItalic(event) {
+        const idx = parseInt(event.currentTarget.dataset.spanIndex, 10);
+        this.toggleSpanFlag(idx, 'italic');
+    }
+
+    toggleSpanFlag(idx, flag) {
+        const block = this.selectedBlock;
+        if (!block) return;
+        const spans = [...(block.props.spans || [])];
+        if (idx < 0 || idx >= spans.length) return;
+        spans[idx] = { ...spans[idx], [flag]: !spans[idx][flag] };
         this.applySpans(block.id, spans);
     }
 
@@ -985,7 +1032,7 @@ function makeFieldText(label, token) {
     };
 }
 function makeRow(columnCount) {
-    const n = Math.max(1, Math.min(3, columnCount || 2));
+    const n = Math.max(1, Math.min(6, columnCount || 2));
     const columns = [];
     for (let i = 0; i < n; i++) columns.push({ id: nextId(), children: [] });
     return { id: nextId(), type: 'row', props: { columnCount: n }, columns };
@@ -1150,7 +1197,15 @@ function spansToSummaryString(spans) {
 function blockSummary(b) {
     switch (b.type) {
         case 'heading':    return `Heading: "${spansToSummaryString(b.props?.spans).substring(0, 80)}"`;
-        case 'text':       return `Text: "${spansToSummaryString(b.props?.spans).substring(0, 80)}"`;
+        case 'text': {
+            const txt = spansToSummaryString(b.props?.spans);
+            const trimmed = txt.trim();
+            // Hint: ":" with no token after = a label awaiting a merge field
+            const hasToken = (b.props?.spans || []).some(s => s.kind === 'token');
+            const isLabel = trimmed.endsWith(':') && !hasToken;
+            const prefix = isLabel ? '⤵ Drop a field here  ·  ' : '';
+            return `${prefix}Text: "${txt.substring(0, 80)}"`;
+        }
         case 'image':      return `Image: ${b.props.signatureType} signature (${b.props.width} × ${b.props.height})`;
         case 'table':      return `Table from ${b.props.relation} · ${(b.props.columns || []).length} cols`;
         case 'row':        return `Row · ${b.props.columnCount} column${b.props.columnCount === 1 ? '' : 's'}`;
@@ -1191,8 +1246,17 @@ function blocksToJson(blocks, _ctx) {
 
 function spansToRendererSpans(spans, blockBold) {
     return (spans || []).map(s => {
-        if (s.kind === 'token') return { token: s.value || '' };
-        return { text: s.value || '', bold: !!blockBold };
+        if (s.kind === 'token') {
+            const out = { token: s.value || '' };
+            if (s.bold) out.bold = true;
+            if (s.italic) out.italic = true;
+            return out;
+        }
+        // Per-span bold/italic flags take precedence; fall back to block-level bold.
+        const out = { text: s.value || '' };
+        if (s.bold || (!('bold' in s) && blockBold)) out.bold = true;
+        if (s.italic) out.italic = true;
+        return out;
     });
 }
 
@@ -1288,12 +1352,12 @@ function nodeToBlock(n) {
         const fs = n.props?.fontSize || '11pt';
         const sizeNum = parseFloat(fs);
         const ourSpans = spans.map(s => {
-            if (s.token != null) return { kind: 'token', value: s.token };
-            return { kind: 'text', value: s.text || '' };
+            if (s.token != null) {
+                return { kind: 'token', value: s.token, bold: !!s.bold, italic: !!s.italic };
+            }
+            return { kind: 'text', value: s.text || '', bold: !!s.bold, italic: !!s.italic };
         });
-        // Determine bold from any text span (rough heuristic)
         const anyBold = spans.some(s => s.text != null && s.bold);
-        // Heading vs regular text: large font OR all-bold single text span
         const isHeading = sizeNum >= 16 || (spans.length === 1 && spans[0].text != null && spans[0].bold);
         return {
             id: nextId(),
@@ -1333,7 +1397,7 @@ function makeTextFromString(text, opts) {
         id: nextId(),
         type: o.heading ? 'heading' : 'text',
         props: {
-            spans: [{ kind: 'text', value: text }],
+            spans: [{ kind: 'text', value: text, bold: !!o.bold, italic: !!o.italic }],
             align: o.align || (o.heading ? 'center' : 'left'),
             size: o.size || (o.heading ? '20pt' : '11pt'),
             bold: !!o.bold
@@ -1346,13 +1410,155 @@ function htmlStringToBlocks(html) {
     const container = document.createElement('div');
     container.innerHTML = html;
     const blocks = [];
-    walkNodeForBlocks(container, blocks);
+    const ctx = { isFirstContent: true };
+    walkNodeForBlocks(container, blocks, ctx);
     return blocks;
 }
 
-function walkNodeForBlocks(node, blocks) {
+function isWhollyBold(el) {
+    const kids = Array.from(el.children);
+    if (kids.length === 0) return false;
+    return kids.every(c => /^(strong|b)$/i.test(c.tagName));
+}
+
+/**
+ * Walk inline-content (text + <strong>/<b>/<em>/<i>/<u>) and emit a flat list
+ * of spans with bold/italic flags preserved. Adjacent same-style runs are merged.
+ */
+function paragraphToSpans(paragraph) {
+    const out = [];
+    walkInline(paragraph, { bold: false, italic: false }, out);
+    return mergeAdjacentSpans(out);
+}
+
+function walkInline(node, style, out) {
     for (const child of Array.from(node.childNodes)) {
-        if (child.nodeType !== 1) continue; // skip text/comment nodes; they live inside element children
+        if (child.nodeType === 3) {
+            const t = child.nodeValue;
+            if (t) out.push({ kind: 'text', value: t, bold: style.bold, italic: style.italic });
+            continue;
+        }
+        if (child.nodeType !== 1) continue;
+        const tag = child.tagName.toLowerCase();
+        if (tag === 'br') {
+            out.push({ kind: 'text', value: '\n', bold: style.bold, italic: style.italic });
+            continue;
+        }
+        const next = { ...style };
+        if (tag === 'strong' || tag === 'b') next.bold = true;
+        if (tag === 'em' || tag === 'i') next.italic = true;
+        walkInline(child, next, out);
+    }
+}
+
+function mergeAdjacentSpans(spans) {
+    const out = [];
+    for (const s of spans) {
+        const last = out[out.length - 1];
+        if (last && last.kind === 'text' && s.kind === 'text'
+            && !!last.bold === !!s.bold && !!last.italic === !!s.italic) {
+            last.value += s.value;
+        } else {
+            out.push({ ...s });
+        }
+    }
+    return out;
+}
+
+const SIGNATURE_LABEL_RE = /(signature|signed\s+by|sign\s*here|initials?)/i;
+const TRAILING_UNDERSCORES_RE = /^_{3,}$/;
+const LABEL_PATTERN_RE = /^(.{1,80}?):\s*(_+\s*)?$/;
+
+function isSignatureLabel(text) {
+    return SIGNATURE_LABEL_RE.test(text);
+}
+
+function makeSignatureImageBlock() {
+    return {
+        id: nextId(),
+        type: 'image',
+        props: { signatureType: 'Patient', width: '180px', height: '50px' }
+    };
+}
+
+function makeLabeledFieldBlock(labelText) {
+    return {
+        id: nextId(),
+        type: 'text',
+        props: {
+            spans: [
+                { kind: 'text', value: labelText.replace(/\s+$/, '') + ': ' },
+                { kind: 'token', value: '' }
+            ],
+            align: 'left', size: '11pt', bold: false
+        }
+    };
+}
+
+function makeLabeledSignatureRow(labelText) {
+    return {
+        id: nextId(),
+        type: 'row',
+        props: { columnCount: 2 },
+        columns: [
+            { id: nextId(), children: [makeTextFromString(labelText.replace(/\s+$/, '') + ': ', { bold: true })] },
+            { id: nextId(), children: [makeSignatureImageBlock()] }
+        ]
+    };
+}
+
+function paragraphToBlock(p, ctx) {
+    const fullText = (p.textContent || '').trim();
+    if (!fullText) return null;
+
+    // Pure underscore line → signature placeholder
+    if (TRAILING_UNDERSCORES_RE.test(fullText)) {
+        return makeSignatureImageBlock();
+    }
+
+    // "Label:" (optionally followed by underscores) → labeled merge slot or signature
+    const labelMatch = LABEL_PATTERN_RE.exec(fullText);
+    if (labelMatch) {
+        const label = labelMatch[1].trim();
+        if (label && isSignatureLabel(label)) {
+            ctx.isFirstContent = false;
+            return makeLabeledSignatureRow(label);
+        }
+        if (label) {
+            ctx.isFirstContent = false;
+            return makeLabeledFieldBlock(label);
+        }
+    }
+
+    // First-paragraph heading rule (only fires before any other content has emitted)
+    if (ctx.isFirstContent && fullText.length < 140 && !fullText.endsWith(':')) {
+        ctx.isFirstContent = false;
+        return makeTextFromString(fullText, { heading: true, size: '22pt', bold: true });
+    }
+
+    // Bold-only paragraph → section heading
+    if (isWhollyBold(p) && fullText.length < 80) {
+        ctx.isFirstContent = false;
+        return makeTextFromString(fullText, { heading: true, size: '14pt', bold: true });
+    }
+
+    // Default: parse inline children, preserving bold/italic per span.
+    const spans = paragraphToSpans(p);
+    if (spans.length === 0 || spans.every(s => !s.value || !s.value.trim())) return null;
+    ctx.isFirstContent = false;
+    return {
+        id: nextId(),
+        type: 'text',
+        props: {
+            spans,
+            align: 'left', size: '11pt', bold: false
+        }
+    };
+}
+
+function walkNodeForBlocks(node, blocks, ctx) {
+    for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType !== 1) continue;
         const tag = child.tagName.toLowerCase();
 
         if (/^h[1-6]$/.test(tag)) {
@@ -1360,17 +1566,19 @@ function walkNodeForBlocks(node, blocks) {
             const sizeByLevel = { 1: '24pt', 2: '20pt', 3: '17pt', 4: '15pt', 5: '13pt', 6: '12pt' };
             const text = (child.textContent || '').trim();
             if (text) blocks.push(makeTextFromString(text, { heading: true, size: sizeByLevel[level] || '14pt', bold: true }));
+            ctx.isFirstContent = false;
             continue;
         }
 
         if (tag === 'p') {
-            const text = (child.textContent || '').trim();
-            if (text) blocks.push(makeTextFromString(text));
+            const block = paragraphToBlock(child, ctx);
+            if (block) blocks.push(block);
             continue;
         }
 
         if (tag === 'hr') {
             blocks.push(makeRule());
+            ctx.isFirstContent = false;
             continue;
         }
 
@@ -1380,32 +1588,126 @@ function walkNodeForBlocks(node, blocks) {
                 const text = (li.textContent || '').trim();
                 if (text) blocks.push(makeTextFromString('• ' + text));
             }
+            ctx.isFirstContent = false;
             continue;
         }
 
         if (tag === 'table') {
-            // Flatten each row to a "Cell A | Cell B | …" text block. Real table support
-            // would land as a top-level table block with column config; deferred for POC.
             const rows = child.querySelectorAll(':scope tr');
             for (const row of Array.from(rows)) {
-                const cells = Array.from(row.querySelectorAll(':scope th, :scope td'))
-                    .map(c => (c.textContent || '').trim());
-                const text = cells.join('   |   ');
-                if (text) blocks.push(makeTextFromString(text));
+                const cells = Array.from(row.querySelectorAll(':scope th, :scope td'));
+                if (cells.length === 0) continue;
+                const cellTexts = cells.map(c => (c.textContent || '').trim());
+                const cap = Math.min(cellTexts.length, 6);
+                if (cap === 1) {
+                    const single = cellTexts[0];
+                    if (single) {
+                        // Even single-cell rows can carry "Label:" structure
+                        const lm = LABEL_PATTERN_RE.exec(single);
+                        if (lm) blocks.push(makeLabeledFieldBlock(lm[1].trim()));
+                        else blocks.push(makeTextFromString(single));
+                    }
+                    continue;
+                }
+                const cols = [];
+                for (let i = 0; i < cap; i++) {
+                    cols.push({
+                        id: nextId(),
+                        children: cellTexts[i] ? [makeTextFromString(cellTexts[i])] : []
+                    });
+                }
+                blocks.push({
+                    id: nextId(),
+                    type: 'row',
+                    props: { columnCount: cap },
+                    columns: cols
+                });
             }
+            ctx.isFirstContent = false;
             continue;
         }
 
-        // Container-ish elements: recurse so we don't lose their inner children
         if (tag === 'div' || tag === 'section' || tag === 'article') {
-            walkNodeForBlocks(child, blocks);
+            walkNodeForBlocks(child, blocks, ctx);
             continue;
         }
 
-        // Anything else: emit textContent as a plain text block
         const text = (child.textContent || '').trim();
-        if (text) blocks.push(makeTextFromString(text));
+        if (text) {
+            blocks.push(makeTextFromString(text));
+            ctx.isFirstContent = false;
+        }
     }
+}
+
+/* ============================================================
+ *  Two-pass: auto-match empty token spans to fields by label
+ * ============================================================ */
+
+function normalizeForMatch(s) {
+    return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function suggestFieldMatch(label, fields) {
+    if (!fields || fields.length === 0) return null;
+    const target = normalizeForMatch(label);
+    if (!target) return null;
+    // Exact label match
+    let m = fields.find(f => normalizeForMatch(f.label) === target);
+    if (m) return m.apiName;
+    // Exact apiName-without-suffix match
+    m = fields.find(f => normalizeForMatch((f.apiName || '').replace(/__c$/i, '')) === target);
+    if (m) return m.apiName;
+    // Substring (either way), prefer the shorter field name to avoid greedy matches
+    const candidates = fields.filter(f => {
+        const fl = normalizeForMatch(f.label);
+        const fa = normalizeForMatch((f.apiName || '').replace(/__c$/i, ''));
+        return (fl && (fl.includes(target) || target.includes(fl)))
+            || (fa && (fa.includes(target) || target.includes(fa)));
+    });
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => (a.label || '').length - (b.label || '').length);
+    return candidates[0].apiName;
+}
+
+function autoMatchTokens(blocks, fields) {
+    let matchCount = 0;
+    function patchSpans(b) {
+        if (!b || (b.type !== 'text' && b.type !== 'heading')) return b;
+        const spans = b.props?.spans || [];
+        const out = spans.map((s, i) => {
+            if (s.kind !== 'token' || s.value) return s;
+            // Look at the immediately preceding text span for the label
+            const prev = i > 0 ? spans[i - 1] : null;
+            if (!prev || prev.kind !== 'text') return s;
+            const label = prev.value.replace(/[:_\s]+$/g, '').trim();
+            if (!label) return s;
+            const match = suggestFieldMatch(label, fields);
+            if (match) {
+                matchCount++;
+                return { ...s, value: match };
+            }
+            return s;
+        });
+        return { ...b, props: { ...b.props, spans: out } };
+    }
+    function recurse(arr) {
+        return arr.map(b => {
+            const patched = patchSpans(b);
+            if (patched.type === 'row') {
+                return {
+                    ...patched,
+                    columns: (patched.columns || []).map(col => ({
+                        ...col,
+                        children: recurse(col.children || [])
+                    }))
+                };
+            }
+            return patched;
+        });
+    }
+    const patched = recurse(blocks);
+    return { blocks: patched, matchCount };
 }
 
 function groupItemsIntoLines(items) {

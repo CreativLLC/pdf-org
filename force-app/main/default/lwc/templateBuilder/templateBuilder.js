@@ -367,25 +367,55 @@ export default class TemplateBuilder extends LightningElement {
         }
     }
 
+    /**
+     * LWS-safe lookup of a global library. `window` is the only reliable global
+     * inside the LWC sandbox; `globalThis` is shadowed/undefined in some orgs.
+     */
+    findGlobal(name) {
+        if (typeof window !== 'undefined' && window[name]) return window[name];
+        return null;
+    }
+
     async ensureMammothLoaded() {
-        if (this._mammothLoaded && (window.mammoth || globalThis.mammoth)) return;
-        await loadScript(this, MAMMOTH_URL);
+        if (this._mammothLoaded && this.findGlobal('mammoth')) return;
+        // Known LWC bug salesforce/lwc#2640: loadScript can reject with `undefined`
+        // even when the script DID actually load. So we catch+ignore the rejection
+        // and check the global afterward; only treat as failure if the global is missing.
+        try {
+            await loadScript(this, MAMMOTH_URL);
+        } catch (loadErr) {
+            // eslint-disable-next-line no-console
+            console.warn('[BUILDER] loadScript(mammoth) rejected (may be benign LWC bug #2640):', loadErr);
+        }
+        const lib = this.findGlobal('mammoth');
         // eslint-disable-next-line no-console
-        console.log('[BUILDER] mammoth load complete', {
-            onWindow: typeof window.mammoth,
-            onGlobalThis: typeof globalThis.mammoth
-        });
+        console.log('[BUILDER] mammoth probe', { found: !!lib, type: typeof lib });
+        if (!lib) {
+            throw new Error('mammoth.js did not register on window after script load. ' +
+                'Lightning Web Security may have blocked the script.');
+        }
         this._mammothLoaded = true;
     }
 
     async ensurePdfJsLoaded() {
-        if (this._pdfjsLoaded && (window.pdfjsLib || globalThis.pdfjsLib)) return;
-        await loadScript(this, PDFJS_URL + '/pdf.min.js');
+        if (this._pdfjsLoaded && this.findGlobal('pdfjsLib')) return;
+        try {
+            await loadScript(this, PDFJS_URL + '/pdf.min.js');
+        } catch (loadErr) {
+            // eslint-disable-next-line no-console
+            console.warn('[BUILDER] loadScript(pdf.js) rejected (may be benign LWC bug #2640):', loadErr);
+        }
+        const lib = this.findGlobal('pdfjsLib');
         // eslint-disable-next-line no-console
-        console.log('[BUILDER] pdfjs load complete', {
-            onWindow: typeof window.pdfjsLib,
-            onGlobalThis: typeof globalThis.pdfjsLib
+        console.log('[BUILDER] pdfjs probe', {
+            found: !!lib,
+            type: typeof lib,
+            keys: lib ? Object.keys(lib).slice(0, 10) : null
         });
+        if (!lib) {
+            throw new Error('pdf.js did not register on window after script load. ' +
+                'Lightning Web Security may have blocked it. PDF import is unsupported in this org; use DOCX.');
+        }
         this._pdfjsLoaded = true;
     }
 
@@ -419,7 +449,9 @@ export default class TemplateBuilder extends LightningElement {
             data: arrayBuffer,
             disableWorker: true,
             useWorkerFetch: false,
-            isEvalSupported: false
+            isEvalSupported: false,    // skip the Function-constructor JPEG decode path
+            disableFontFace: true,     // avoid more dynamic-code paths LWS may block
+            useSystemFonts: true
         });
         const pdf = await loadingTask.promise;
         const blocks = [];

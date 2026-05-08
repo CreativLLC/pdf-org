@@ -1,8 +1,8 @@
 <template>
     <lightning-card title="Template Builder" icon-name="standard:visualforce_page">
         <div slot="actions">
-            <input type="file" accept=".docx,.pdf" class="file-import-input" onchange={handleFileSelected} style="display: none"/>
-            <lightning-button label="Import from DOCX/PDF" variant="neutral" icon-name="utility:upload" onclick={handleUploadClick} disabled={isImporting} class="slds-m-right_x-small"></lightning-button>
+            <input type="file" accept=".docx" class="file-import-input" onchange={handleFileSelected} style="display: none"/>
+            <lightning-button label="Import from DOCX" variant="neutral" icon-name="utility:upload" onclick={handleUploadClick} disabled={isImporting} title="Import a Word document. For PDFs, open the PDF in Word and Save As .docx first." class="slds-m-right_x-small"></lightning-button>
             <lightning-button label="Save" variant="brand" onclick={handleSave} disabled={isSaving} class="slds-m-right_x-small"></lightning-button>
             <lightning-button label="Open as PDF" variant="neutral" icon-name="utility:new_window" onclick={handleOpenPdf}></lightning-button>
         </div>

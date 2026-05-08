@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Revision_Number__c</fullName>
+    <description>Numeric revision (e.g., 1, 2, 3). Used by Template_Mapping__c rules to pick the right version for a given source record's Revision_Number__c value.</description>
+    <externalId>false</externalId>
+    <label>Revision Number</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

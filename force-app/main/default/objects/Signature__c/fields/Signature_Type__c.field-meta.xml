@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Signature_Type__c</fullName>
+    <description>Distinguishes which slot in a multi-signature template a given signature feeds (e.g., the "physician" image goes into the doctor row, the "patient" image into the patient row).</description>
+    <externalId>false</externalId>
+    <label>Signature Type</label>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Patient</fullName>
+                <default>true</default>
+                <label>Patient</label>
+            </value>
+            <value>
+                <fullName>Physician</fullName>
+                <default>false</default>
+                <label>Physician</label>
+            </value>
+            <value>
+                <fullName>Witness</fullName>
+                <default>false</default>
+                <label>Witness</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Default_Version__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Fallback Template_Version__c used when no Template_Mapping__c rule matches the source record.</description>
+    <externalId>false</externalId>
+    <label>Default Version</label>
+    <referenceTo>Template_Version__c</referenceTo>
+    <relationshipLabel>Default For Templates</relationshipLabel>
+    <relationshipName>Default_For_Templates</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

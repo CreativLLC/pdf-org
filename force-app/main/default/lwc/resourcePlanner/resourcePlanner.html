@@ -1,0 +1,80 @@
+<!--
+ - Created by charl on 3/24/2023.
+ -->
+
+<!-- ResourcePlanner -->
+<template>
+    <template if:true={isLoading}>
+        <lightning-spinner alternative-text="Loading" size="large"></lightning-spinner>
+    </template>
+    <template if:true={resourceModel}>
+        <div class="slds-p-around_small mainDiv">
+            <div class="headerDiv">
+                <table>
+                    <tr>
+                        <td>
+                            <lightning-input type="date" variant="label-hidden"
+                                             name="startDateInput"
+                                             data-name="startDateInput"
+                                             value={resourceModel.filterStart}
+                                             onchange={handleDateChange}></lightning-input>
+                        </td>
+                        <td style="text-align: center;"> to </td>
+                        <td>
+                            <lightning-input type="date" variant="label-hidden"
+                                             name="endDateInput"
+                                             data-name="endDateInput"
+                                             value={resourceModel.filterEnd}
+                                             onchange={handleDateChange}></lightning-input>
+                        </td>
+                        <td>
+                            &nbsp;<lightning-button variant="brand" label="Refresh" title="Refresh" onclick={handleSearchClick}></lightning-button>
+                            &nbsp;<lightning-button variant="brand-outline" label="Switch View" title="Switch View" onclick={handleViewSwitch}></lightning-button>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="bodyDiv">
+                <table>
+                    <tr class="datesRow">
+                        <template for:each={resourceModel.datesRow.displayCells} for:item="dateItem">
+                            <td key={dateItem.label} style="padding: 4px;">{dateItem.label}</td>
+                        </template>
+                    </tr>
+                    <template if:true={byResourceRows}>
+                        <template for:each={byResourceRows} for:item="displayRow">
+                            <tr key={displayRow.key} class={displayRow.cssClass}>
+                                <template for:each={displayRow.displayCells} for:item="displayCell">
+                                    <td key={displayCell.key} style="padding: 4px;" class={displayCell.cssClass}>
+                                        <template if:true={displayCell.linkUrl}>
+                                            <a href={displayCell.linkUrl} target="_blank">{displayCell.label}</a>
+                                        </template>
+                                        <template if:false={displayCell.linkUrl}>
+                                            {displayCell.label}
+                                        </template>
+                                    </td>
+                                </template>
+                            </tr>
+                        </template>
+                    </template>
+                    <template if:true={byProjectRows}>
+                        <template for:each={byProjectRows} for:item="displayRow">
+                            <tr key={displayRow.key} class={displayRow.cssClass}>
+                                <template for:each={displayRow.displayCells} for:item="displayCell">
+                                    <td key={displayCell.key} style="padding: 4px;" class={displayCell.cssClass}>
+                                        <template if:true={displayCell.linkUrl}>
+                                            <a href={displayCell.linkUrl} target="_blank">{displayCell.label}</a>
+                                        </template>
+                                        <template if:false={displayCell.linkUrl}>
+                                            {displayCell.label}
+                                        </template>
+                                    </td>
+                                </template>
+                            </tr>
+                        </template>
+                    </template>
+                </table>
+            </div>
+        </div>
+    </template>
+</template>

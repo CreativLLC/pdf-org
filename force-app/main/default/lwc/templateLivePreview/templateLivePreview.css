@@ -1,0 +1,41 @@
+.editor-grid {
+    min-height: 700px;
+}
+
+.json-editor {
+    width: 100%;
+    height: 700px;
+    font-family: Consolas, Menlo, Monaco, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    padding: 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    background: #fafafa;
+    color: #111;
+    resize: vertical;
+    box-sizing: border-box;
+    white-space: pre;
+    overflow: auto;
+    tab-size: 2;
+}
+
+.json-editor:focus {
+    outline: none;
+    border-color: #1589ee;
+    box-shadow: 0 0 3px rgba(21, 137, 238, 0.5);
+}
+
+.preview-frame {
+    width: 100%;
+    height: 700px;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    background: #ffffff;
+    overflow: auto;
+}
+
+.preview-content {
+    box-sizing: border-box;
+    width: 100%;
+}

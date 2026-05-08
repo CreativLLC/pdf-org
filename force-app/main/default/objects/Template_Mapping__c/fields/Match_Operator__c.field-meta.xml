@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Match_Operator__c</fullName>
+    <description>How Match_Value__c is compared to the source record's Match_Field_Api_Name__c value. Default = always match (catch-all).</description>
+    <externalId>false</externalId>
+    <label>Match Operator</label>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Equals</fullName>
+                <default>true</default>
+                <label>Equals</label>
+            </value>
+            <value>
+                <fullName>In</fullName>
+                <default>false</default>
+                <label>In (comma-separated values)</label>
+            </value>
+            <value>
+                <fullName>NotNull</fullName>
+                <default>false</default>
+                <label>Is Not Null</label>
+            </value>
+            <value>
+                <fullName>Default</fullName>
+                <default>false</default>
+                <label>Default (always matches)</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

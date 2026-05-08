@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Definition_Json__c</fullName>
+    <description>The template body as JSON (rows, cols, text spans, merge tokens, conditional rules, tables). If exceeds 128KB, JSON spills to a ContentVersion titled "definition.json" attached to this Template_Version__c; PdfTemplateService reads field-or-file transparently.</description>
+    <externalId>false</externalId>
+    <label>Definition JSON</label>
+    <length>131072</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>30</visibleLines>
+</CustomField>

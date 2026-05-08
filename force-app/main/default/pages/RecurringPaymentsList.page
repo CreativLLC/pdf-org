@@ -1,0 +1,75 @@
+<apex:page standardController="Acct__c" extensions="PaymentListController">
+
+    <style>
+        .highlightIncome{
+            font-weight:bold;
+        	background-color: lightgreen;
+        }
+    </style>
+
+    <apex:form >
+        <apex:pageBlock mode="mainDetail">
+            <apex:pageBlockTable value="{!transactions}" var="trans" width="100%">
+                <apex:column width="10%">
+                    <apex:facet name="header">Date</apex:facet>
+                    <apex:outputText styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="{0,date,MM/dd/yyyy}">
+                        <apex:param value="{!trans.trans.Date__c}" />
+                    </apex:outputText>
+                </apex:column>
+                <apex:column width="25%">
+                    <apex:facet name="header">To/From</apex:facet>
+                    <apex:outputLink rendered="{!if(trans.rowId != null, true, false)}"
+                        styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" 
+                        value="/{!trans.rowId}" 
+                        target="_blank">{!trans.rowLabel}
+                    </apex:outputLink>
+                    <apex:outputText rendered="{!if(trans.trans.To__r.Id != null, false, true)}"
+                        styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" 
+                        value="{!trans.trans.Budget__c}" />
+                </apex:column>
+                <apex:column width="10%">
+                    <apex:facet name="header">Trans. #</apex:facet>
+                    <apex:outputLink styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="/{!trans.trans.Id}" target="_blank">{!trans.trans.Name}</apex:outputLink>
+                </apex:column>
+                <apex:column width="10%">
+                    <apex:facet name="header">Instance Of</apex:facet>
+                    <apex:outputLink styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="/{!trans.trans.Instance_Of__r.Id}" target="_blank">{!trans.trans.Instance_Of__r.Name}</apex:outputLink>
+                </apex:column>
+                <apex:column width="10%">
+                    <apex:facet name="header">Amount</apex:facet>
+                    <apex:outputField styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="{!trans.trans.Amount__c}"/>
+                </apex:column>
+                <apex:column width="10%">
+                    <apex:facet name="header">Status</apex:facet>
+                    <apex:outputField styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="{!trans.trans.Status__c}"/>
+                </apex:column>
+                <apex:column width="10%">
+                    <apex:facet name="header">Auto</apex:facet>
+                    <apex:outputField value="{!trans.trans.Auto_pay_calc__c}"/>
+                </apex:column>
+                <apex:column width="15%">
+                    <apex:facet name="header">Confirmation #</apex:facet>
+                    <apex:outputField styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="{!trans.trans.Confirmation_Number__c}"/>
+                </apex:column>
+                <apex:column width="10%">
+                    <apex:facet name="header">Balance</apex:facet>
+                    <apex:outputText styleClass="{!if(trans.trans.From__c != currentAccount.Id,'highlightIncome','')}" value="{!trans.rollupValue}"/>
+                </apex:column>
+                <apex:inlineEditSupport event="ondblClick" 
+                    showOnEdit="saveButton,cancelButton" 
+                    hideOnEdit="depositButton,withdrawlButton" /> 
+            </apex:pageBlockTable>
+        
+            <apex:outputText value="{!Acct__c.Current_Balance__c}" rendered="false"/>
+            
+            <apex:pageBlockButtons > 
+                <apex:commandButton value="New Deposit" id="depositButton" />
+                <apex:commandButton value="New Withdrawl" id="withdrawlButton" />
+                
+                <apex:commandButton value="Save" action="{!saveTransactions}" id="saveButton" />
+                <apex:commandButton value="Cancel" action="{!cancel}" id="cancelButton" />
+            </apex:pageBlockButtons>
+        </apex:pageBlock>
+    </apex:form>
+
+</apex:page>

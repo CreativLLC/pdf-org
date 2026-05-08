@@ -1,0 +1,21 @@
+<apex:page controller="DocumentRenderController" renderAs="PDF" applyHtmlTag="true" applyBodyTag="false" showHeader="false" sidebar="false" standardStylesheets="false">
+<head>
+<style type="text/css">
+@page { size: {!pageModel.page.size} {!pageModel.page.orientation}; margin: {!pageModel.page.margins}; }
+body { font-family: {!pageModel.page.fontStack}; font-size: 11pt; color: #222; }
+img { max-width: 100%; }
+table { border-collapse: collapse; }
+</style>
+</head>
+<body>
+    <apex:outputPanel layout="block" rendered="{!errorMessage != null}">
+        <div style="color: red; font-family: monospace; padding: 12px; border: 1px solid red;">
+            <strong>DocumentRender error:</strong>
+            <apex:outputText value="{!errorMessage}"/>
+        </div>
+    </apex:outputPanel>
+    <apex:repeat value="{!pageModel.htmlBlocks}" var="block">
+        <apex:outputText value="{!block}" escape="false"/>
+    </apex:repeat>
+</body>
+</apex:page>

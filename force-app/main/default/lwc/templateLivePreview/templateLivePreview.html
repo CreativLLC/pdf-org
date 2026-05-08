@@ -1,0 +1,89 @@
+<template>
+    <lightning-card title="Template Live Preview" icon-name="standard:visualforce_page">
+        <div slot="actions">
+            <lightning-button
+                label={saveLabel}
+                variant="brand"
+                onclick={handleSave}
+                disabled={isSaving}
+                class="slds-m-right_x-small">
+            </lightning-button>
+            <lightning-button
+                label="Format JSON"
+                variant="neutral"
+                onclick={handleFormatJson}
+                class="slds-m-right_x-small">
+            </lightning-button>
+            <lightning-button
+                label="Open as PDF"
+                variant="neutral"
+                icon-name="utility:new_window"
+                onclick={handleOpenPdf}>
+            </lightning-button>
+        </div>
+
+        <template lwc:if={isLoading}>
+            <div class="slds-p-around_medium">
+                <lightning-spinner alternative-text="Loading template…" size="small"></lightning-spinner>
+            </div>
+        </template>
+
+        <template lwc:if={ctx}>
+            <div class="slds-p-around_small">
+                <div class="slds-grid slds-gutters slds-m-bottom_small">
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-text-body_small slds-text-color_weak">Template</div>
+                        <div class="slds-text-body_regular"><strong>{ctx.templateName}</strong> · Revision {ctx.revisionNumber} · {ctx.status}</div>
+                        <div class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                            Target: <code>{ctx.targetSObject}</code>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2">
+                        <lightning-combobox
+                            name="sampleRecord"
+                            label="Preview against record"
+                            value={selectedSampleRecordId}
+                            options={sampleRecordOptions}
+                            onchange={handleSampleChange}>
+                        </lightning-combobox>
+                    </div>
+                </div>
+
+                <template lwc:if={errorText}>
+                    <div class="slds-box slds-theme_error slds-m-bottom_small">
+                        <strong>Error:</strong> {errorText}
+                    </div>
+                </template>
+
+                <div class="slds-grid slds-gutters editor-grid">
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-text-title slds-m-bottom_x-small">Definition JSON</div>
+                        <textarea
+                            class="json-editor"
+                            value={json}
+                            spellcheck="false"
+                            oninput={handleJsonChange}>
+                        </textarea>
+                        <div class="slds-m-top_x-small">
+                            <lightning-button
+                                label="Refresh Preview"
+                                variant="neutral"
+                                icon-name="utility:refresh"
+                                onclick={handleRefreshPreview}>
+                            </lightning-button>
+                            <span class="slds-text-body_small slds-text-color_weak slds-m-left_small">
+                                Renders without saving. Save to persist changes.
+                            </span>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-text-title slds-m-bottom_x-small">Live Preview</div>
+                        <div class="preview-frame">
+                            <div class="preview-content" style={previewStyle} lwc:dom="manual"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </lightning-card>
+</template>

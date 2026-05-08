@@ -1,0 +1,28 @@
+<apex:page standardController="Acct__c" tabStyle="Acct__c" >
+    <apex:pageBlock title="Financial Account Detail" mode="mainDetail">
+        <apex:pageBlockSection >
+            <apex:outputField value="{!Acct__c.Name}" />
+            <apex:outputField label="Record Type" value="{!Acct__c.RecordType.Name}" />
+            <apex:outputField value="{!Acct__c.Current_Balance__c}" />
+            <apex:outputField value="{!Acct__c.Type__c}" />
+            <apex:outputField value="{!Acct__c.Account_Status__c}" />
+            <apex:outputField label="Owner" value="{!Acct__c.Owner.Name}" />
+        </apex:pageBlockSection>
+        <apex:pageBlockSection title="Account Access Info">
+            <apex:outputField value="{!Acct__c.URL__c}" />
+            <apex:outputField label="Record Type" value="{!Acct__c.Account_Number__c}" />
+            <apex:outputField value="{!Acct__c.User_Name__c}" />
+            <apex:outputField value="{!Acct__c.Customer_Support__c}" />
+            <apex:outputField value="{!Acct__c.Reminder__c}" />
+        </apex:pageBlockSection>
+        <apex:pageBlockSection title="Transactions" columns="1">
+            <apex:include pageName="RecurringPaymentsList" />
+        </apex:pageBlockSection>
+
+    </apex:pageBlock>
+    
+    <apex:relatedList list="Deposits__r"/>
+    <apex:relatedList list="Withdrawls__r"/>
+    <apex:relatedList list="Recurring_Deposits__r"/>
+    <apex:relatedList list="Recurring_Withdrawls__r"/>
+</apex:page>

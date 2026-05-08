@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <brand>
+        <headerColor>#0B5CAB</headerColor>
+        <shouldOverrideOrgTheme>false</shouldOverrideOrgTheme>
+    </brand>
+    <description>Native Salesforce PDF document generator — manage templates, versions, mapping rules, and demo Form__c records.</description>
+    <formFactors>Large</formFactors>
+    <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
+    <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
+    <label>PDF Generator</label>
+    <navType>Standard</navType>
+    <tabs>standard-home</tabs>
+    <tabs>Form__c</tabs>
+    <tabs>Document_Template__c</tabs>
+    <tabs>Template_Version__c</tabs>
+    <tabs>Template_Mapping__c</tabs>
+    <tabs>standard-File</tabs>
+    <uiType>Lightning</uiType>
+</CustomApplication>

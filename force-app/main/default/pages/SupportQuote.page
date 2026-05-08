@@ -1,0 +1,108 @@
+<apex:page StandardController="Opportunity" extensions="SupportQuoteController" renderas="pdf">
+
+<style>
+.tablehead {
+    border: 1px solid;
+    background-color: #99C68E;
+    font-weight: bold;
+    font-size: 120%;
+}
+</style>
+
+	<table width="700px">
+		<tr>
+			<td width="250px">
+				<apex:image url="{!$Resource.OsibtysWebLogo}" width="150px" height="75px"/>
+			</td>
+			<td width="450px" align="right">
+				&nbsp;
+			</td>
+		</tr>
+		<tr>
+			<td width="250px">
+				<font color="#666666">11596 Marshall St.<br/>Westminster, CO 80020<br/>www.osibtys.com</font>
+			</td>
+			<td width="450px" align="right">		
+
+			</td>
+		</tr>
+		<tr>
+			<td width="700px" align="center" colspan="2">
+				<br/>
+				<h2>Support Options</h2>
+				For SalesForce.com Support and Administration Services
+				<br/>&nbsp;
+				<br/>&nbsp;
+			</td>
+		</tr>
+		<tr>
+			<td width="700px" align="left" colspan="2">
+				The pricing below is valid until {!validUntil} 
+				<br/>&nbsp; 
+			</td>
+		</tr>
+	</table>
+	<table border="0" cellspacing="0" width="700px">
+		<tr>
+			<td><b><apex:outputLabel value="Product"/></b></td>
+			<td><b><apex:outputLabel value="Description"/></b></td>
+			<td><b><apex:outputLabel value="Price"/></b></td>
+		</tr>
+		<tr height="1px">
+			<td bgcolor="#000000"></td>
+			<td bgcolor="#000000"></td>
+			<td bgcolor="#000000"></td>
+		</tr>
+		<apex:repeat value="{!quoteLineItems}" var="item">
+			<tr>
+				<td><apex:outputText value="{!item.value0}"/></td>
+				<td><apex:outputText value="{!item.value1}"/></td>
+				<td>
+					<apex:outputText value="{0, number, $0,000}{!item.value2}">
+						<apex:param value="{!item.value10}"/>
+					</apex:outputText>
+				</td>
+			</tr>
+		</apex:repeat>
+	</table>
+	<br/>
+	<br/>
+	<table width="700px">
+		<tr>
+			<td width="700px" align="left" colspan="2">
+			<font face="Arial" size="small">
+			Applicable Terms:<br/>
+			<ol>
+			<li>During the term of the support contract, Osibtys will respond 
+			within twenty four(24) hours to any request submitted by an employee of {!accountName} 
+			via email, phone or web form.</li>
+			<li>The hours purchased as part of a support contract expire at the end
+			of the support contract, and must be used within the term of the contract.</li>
+			<li>Support contract hours may be allocated to the performance, by Osibtys, 
+			of any SalesForce.com troubleshooting, administration, development, documentation, 
+			training, consulting or other SalesForce.com-related activities that {!accountName} 
+			deems necessary.</li>
+			<li>For resourcing purposes, any request having more than eight(8) hours allocated 
+			to it should be part of an existing and ongoing Osibtys project, or will be treated 
+			by Osibtys as a project, and will follow Osibtys' normal project engagement process.</li>
+			</ol>
+			</font>
+			  
+			</td>
+		</tr>	
+		<tr>
+			<td width="700px" align="left" colspan="2">&nbsp;<br/></td>
+		</tr>
+		<tr>
+			<td width="700px" align="left" colspan="2">
+				Thank you for your interest in Osibtys.  We appreciate the opportunity to do business with you.
+				<br/><br/>Sincerely,<br/>
+				<!-- <br/>{!$User.FirstName}&nbsp;{!$User.LastName}
+				<br/>{!$User.Title} -->
+				Peter Haid<br/>
+				Founder, Director of Business Development<br/>
+				peter.haid@osibyts.com
+			</td>
+		</tr>
+	</table>
+</apex:page>

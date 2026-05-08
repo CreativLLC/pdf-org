@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Record_Type_Developer_Name__c</fullName>
+    <description>Source record's RecordType.DeveloperName must equal this value to match. Leave blank for "any record type".</description>
+    <externalId>false</externalId>
+    <label>Record Type Developer Name</label>
+    <length>80</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

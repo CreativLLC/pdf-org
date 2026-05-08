@@ -1,0 +1,30 @@
+<apex:page standardController="Sales_Objection__c">
+    <head>
+        <style>
+            div {
+                margin-bottom: 20px;
+                margin-left: 10px;
+                margin-right: auto;
+                font-size: 14px;
+                width: 720px;
+            }
+        </style>
+    </head>
+    <body>
+        <div>
+            Get the P/C to further explain their objection, comment on their concern regarding their needs and their system’s possible hidden challenges. Adjust or soften your question(s) to appeal to P/C’s attitude, emotions and personality style, e.g.:
+        </div>
+        <div>
+            Then select the appropriate response that fits your situation, their direction and their needs. Again, remember to adjust and/or soften your comments to appeal to the P/C’s needs, concerns, expectations, personality style, values, etc., e.g.:
+        </div>
+        <div>
+            If necessary address P/C’s objections then:
+            <ol>
+                <li>Get agreement from P/C that their issue was addressed</li>
+                <li>Ask if they have any other concerns</li>
+                <li>If they do, again address their needs, issue or objection</li>
+                <li>If possible follow up conversation with a subtle or soft trial close regarding scheduling an SF MAX review</li>
+            </ol>
+        </div>
+    </body>
+</apex:page>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All</fullName>
+    <columns>NAME</columns>
+    <columns>Document_Template__c</columns>
+    <columns>Template_Version__c</columns>
+    <columns>Record_Type_Developer_Name__c</columns>
+    <columns>Match_Field_Api_Name__c</columns>
+    <columns>Match_Operator__c</columns>
+    <columns>Match_Value__c</columns>
+    <columns>Priority__c</columns>
+    <filterScope>Everything</filterScope>
+    <label>All</label>
+</ListView>

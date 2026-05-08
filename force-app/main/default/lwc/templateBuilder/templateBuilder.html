@@ -1,0 +1,277 @@
+<template>
+    <lightning-card title="Template Builder" icon-name="standard:visualforce_page">
+        <div slot="actions">
+            <input type="file" accept=".docx,.pdf" class="file-import-input" onchange={handleFileSelected} style="display: none"/>
+            <lightning-button label="Import from DOCX/PDF" variant="neutral" icon-name="utility:upload" onclick={handleUploadClick} disabled={isImporting} class="slds-m-right_x-small"></lightning-button>
+            <lightning-button label="Save" variant="brand" onclick={handleSave} disabled={isSaving} class="slds-m-right_x-small"></lightning-button>
+            <lightning-button label="Open as PDF" variant="neutral" icon-name="utility:new_window" onclick={handleOpenPdf}></lightning-button>
+        </div>
+
+        <template lwc:if={isLoading}>
+            <div class="slds-p-around_medium">
+                <lightning-spinner alternative-text="Loading…" size="small"></lightning-spinner>
+            </div>
+        </template>
+
+        <template lwc:if={isImporting}>
+            <div class="slds-p-around_small slds-text-color_weak slds-text-body_small import-status">
+                <lightning-spinner alternative-text="Importing…" size="small" variant="brand"></lightning-spinner>
+                <span class="slds-m-left_small">{importStatus}</span>
+            </div>
+        </template>
+
+        <template lwc:if={ctx}>
+            <div class="builder-toolbar slds-p-horizontal_small slds-p-vertical_x-small slds-grid slds-gutters slds-grid_vertical-align-center">
+                <div class="slds-col">
+                    <span class="slds-text-body_small slds-text-color_weak">Template:</span>
+                    <strong>{ctx.templateName}</strong>
+                    <span class="slds-text-body_small slds-text-color_weak slds-m-left_small">Target: <code>{ctx.targetSObject}</code></span>
+                </div>
+                <div class="slds-col slds-size_1-of-3">
+                    <lightning-combobox
+                        label="Preview record" variant="label-hidden"
+                        value={selectedSampleRecordId} options={sampleRecordOptions}
+                        onchange={handleSampleChange}>
+                    </lightning-combobox>
+                </div>
+            </div>
+
+            <template lwc:if={errorText}>
+                <div class="slds-box slds-theme_error slds-m-around_small">{errorText}</div>
+            </template>
+
+            <div class="builder-grid">
+                <!-- ============================== PALETTE ============================== -->
+                <div class="palette">
+                    <div class="palette-section-header">Layout</div>
+                    <div class="palette-items">
+                        <div class="palette-item" draggable="true" data-kind="heading" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddHeading}>
+                            <lightning-icon icon-name="utility:text" size="x-small"></lightning-icon><span>Heading</span>
+                        </div>
+                        <div class="palette-item" draggable="true" data-kind="text" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddText}>
+                            <lightning-icon icon-name="utility:text" size="x-small"></lightning-icon><span>Text Block</span>
+                        </div>
+                        <div class="palette-item" draggable="true" data-kind="row" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddRow}>
+                            <lightning-icon icon-name="utility:layout" size="x-small"></lightning-icon><span>Row (with columns)</span>
+                        </div>
+                        <div class="palette-item" draggable="true" data-kind="image" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddImage}>
+                            <lightning-icon icon-name="utility:image" size="x-small"></lightning-icon><span>Signature Image</span>
+                        </div>
+                        <div class="palette-item" draggable="true" data-kind="table" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddTable}>
+                            <lightning-icon icon-name="utility:table" size="x-small"></lightning-icon><span>Signatures Table</span>
+                        </div>
+                        <div class="palette-item" draggable="true" data-kind="spacer" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddSpacer}>
+                            <lightning-icon icon-name="utility:expand_alt" size="x-small"></lightning-icon><span>Spacer</span>
+                        </div>
+                        <div class="palette-item" draggable="true" data-kind="rule" ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddRule}>
+                            <lightning-icon icon-name="utility:dash" size="x-small"></lightning-icon><span>Horizontal Rule</span>
+                        </div>
+                    </div>
+
+                    <div class="palette-section-header slds-m-top_small">Fields ({ctx.targetSObject})</div>
+                    <div class="palette-items palette-fields">
+                        <template for:each={objMeta.fields} for:item="f">
+                            <div key={f.apiName} class="palette-item palette-field"
+                                 draggable="true" data-kind="field" data-field={f.apiName}
+                                 ondragstart={handlePaletteDragStart} ondragend={handleDragEnd} onclick={handleAddField}
+                                 title={f.apiName}>
+                                <lightning-icon icon-name="utility:merge_field" size="xx-small"></lightning-icon>
+                                <span>{f.label}</span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- ============================== CANVAS ============================== -->
+                <div class="canvas-wrap">
+                    <div class="slds-text-title slds-m-bottom_x-small">Canvas — drag from the palette, or click items in the palette to add</div>
+                    <div class="canvas" ondragover={handleCanvasDragOver} ondrop={handleCanvasDrop} ondragleave={handleCanvasDragLeave}>
+                        <template lwc:if={rootDropIndicatorAtStart}>
+                            <div class="drop-indicator"></div>
+                        </template>
+                        <template lwc:if={blocks.length}>
+                            <template for:each={blocksForRender} for:item="b">
+                                <div key={b.id} class="canvas-block-wrap">
+                                    <!-- ROW BLOCK -->
+                                    <template lwc:if={b.isRow}>
+                                        <div class={b.cssClass} draggable="true" onclick={handleBlockClick} data-block-id={b.id} ondragstart={handleBlockDragStart} ondragend={handleDragEnd}>
+                                            <div class="drag-handle" title="Drag to reorder">
+                                                <lightning-icon icon-name="utility:drag_and_drop" size="xx-small" alternative-text="Drag"></lightning-icon>
+                                            </div>
+                                            <div class="canvas-block-summary">{b.summary}</div>
+                                            <div class="canvas-block-actions">
+                                                <lightning-button-icon icon-name="utility:up" size="x-small" variant="bare" data-block-id={b.id} onclick={handleBlockMoveUp} alternative-text="Move up"></lightning-button-icon>
+                                                <lightning-button-icon icon-name="utility:down" size="x-small" variant="bare" data-block-id={b.id} onclick={handleBlockMoveDown} alternative-text="Move down"></lightning-button-icon>
+                                                <lightning-button-icon icon-name="utility:delete" size="x-small" variant="bare" data-block-id={b.id} onclick={handleBlockDelete} alternative-text="Delete"></lightning-button-icon>
+                                            </div>
+                                        </div>
+                                        <template lwc:if={b.isSelected}>
+                                            <div class="inline-props">
+                                                <div class="inline-props-title">Row — properties</div>
+                                                <lightning-combobox label="Number of columns" value={selectedColumnCountStr} options={columnCountOptions} onchange={handleColumnCountChange}></lightning-combobox>
+                                            </div>
+                                        </template>
+                                        <div class="row-columns">
+                                            <template for:each={b.columnsForRender} for:item="col">
+                                                <div key={col.id} class="row-column" style={col.widthStyle}
+                                                     data-row-id={b.id} data-col-id={col.id}
+                                                     ondragover={handleColumnDragOver} ondrop={handleColumnDrop} ondragleave={handleColumnDragLeave}>
+                                                    <template lwc:if={col.showDropIndicatorAtStart}>
+                                                        <div key={col.dropStartKey} class="drop-indicator"></div>
+                                                    </template>
+                                                    <template lwc:if={col.hasChildren}>
+                                                        <template for:each={col.childrenForRender} for:item="child">
+                                                            <div key={child.id} class="canvas-block-wrap nested">
+                                                                <div class={child.cssClass} draggable="true" onclick={handleBlockClick} data-block-id={child.id}
+                                                                     ondragstart={handleBlockDragStart} ondragend={handleDragEnd}
+                                                                     ondragover={handleBlockDragOver} ondrop={handleBlockDrop} ondragleave={handleBlockDragLeave}>
+                                                                    <div class="drag-handle" title="Drag to reorder">
+                                                                        <lightning-icon icon-name="utility:drag_and_drop" size="xx-small" alternative-text="Drag"></lightning-icon>
+                                                                    </div>
+                                                                    <div class="canvas-block-summary">{child.summary}</div>
+                                                                    <div class="canvas-block-actions">
+                                                                        <lightning-button-icon icon-name="utility:up" size="x-small" variant="bare" data-block-id={child.id} onclick={handleBlockMoveUp} alternative-text="Move up"></lightning-button-icon>
+                                                                        <lightning-button-icon icon-name="utility:down" size="x-small" variant="bare" data-block-id={child.id} onclick={handleBlockMoveDown} alternative-text="Move down"></lightning-button-icon>
+                                                                        <lightning-button-icon icon-name="utility:delete" size="x-small" variant="bare" data-block-id={child.id} onclick={handleBlockDelete} alternative-text="Delete"></lightning-button-icon>
+                                                                    </div>
+                                                                </div>
+                                                                <template lwc:if={child.isSelected}>
+                                                                    <div class="inline-props">
+                                                                        <div class="inline-props-title">{propsPanelTitle} — properties</div>
+                                                                        <template lwc:if={isTextOrHeading}>
+                                                                            <div class="spans-editor-title">Content (mix text + fields)</div>
+                                                                            <template for:each={spansForRender} for:item="s">
+                                                                                <div key={s.key} class="span-row">
+                                                                                    <template lwc:if={s.isText}>
+                                                                                        <span class="span-type">Aa</span>
+                                                                                        <lightning-input variant="label-hidden" type="text" value={s.value} data-span-index={s.index} onchange={handleSpanTextChange} class="span-input"></lightning-input>
+                                                                                    </template>
+                                                                                    <template lwc:if={s.isToken}>
+                                                                                        <span class="span-type span-type_token">&#123;&#125;</span>
+                                                                                        <lightning-combobox variant="label-hidden" value={s.value} options={fieldOptions} data-span-index={s.index} onchange={handleSpanTokenChange} class="span-input"></lightning-combobox>
+                                                                                    </template>
+                                                                                    <lightning-button-icon icon-name="utility:up" size="x-small" variant="bare" data-span-index={s.index} onclick={handleSpanMoveUp} alternative-text="Move up"></lightning-button-icon>
+                                                                                    <lightning-button-icon icon-name="utility:down" size="x-small" variant="bare" data-span-index={s.index} onclick={handleSpanMoveDown} alternative-text="Move down"></lightning-button-icon>
+                                                                                    <lightning-button-icon icon-name="utility:close" size="x-small" variant="bare" data-span-index={s.index} onclick={handleSpanDelete} alternative-text="Delete"></lightning-button-icon>
+                                                                                </div>
+                                                                            </template>
+                                                                            <div class="spans-editor-actions">
+                                                                                <lightning-button label="+ Text" variant="neutral" onclick={handleAddTextSpan}></lightning-button>
+                                                                                <lightning-combobox placeholder="+ Field…" variant="label-hidden" options={fieldOptions} onchange={handleAddTokenSpan} class="span-add-field"></lightning-combobox>
+                                                                            </div>
+                                                                            <div class="spans-editor-hint">Tip: drag a field from the palette directly onto this block.</div>
+                                                                            <div class="slds-grid slds-gutters slds-m-top_small">
+                                                                                <div class="slds-col"><lightning-input label="Align" value={selectedBlock.props.align} data-key="align" onchange={handlePropertyChange}></lightning-input></div>
+                                                                                <div class="slds-col"><lightning-input label="Font Size" value={selectedBlock.props.size} data-key="size" onchange={handlePropertyChange}></lightning-input></div>
+                                                                                <div class="slds-col slds-grid slds-grid_vertical-align-end"><lightning-input type="checkbox" label="Bold" checked={selectedBlock.props.bold} data-key="bold" onchange={handlePropertyChange}></lightning-input></div>
+                                                                            </div>
+                                                                        </template>
+                                                                        <template lwc:if={isImage}>
+                                                                            <lightning-combobox label="Signature Type" value={selectedBlock.props.signatureType} options={signatureTypeOptions} data-key="signatureType" onchange={handlePropertyChange}></lightning-combobox>
+                                                                            <lightning-input label="Width" value={selectedBlock.props.width} data-key="width" onchange={handlePropertyChange}></lightning-input>
+                                                                            <lightning-input label="Height" value={selectedBlock.props.height} data-key="height" onchange={handlePropertyChange}></lightning-input>
+                                                                        </template>
+                                                                        <template lwc:if={isSpacer}>
+                                                                            <lightning-input label="Height" value={selectedBlock.props.height} data-key="height" onchange={handlePropertyChange}></lightning-input>
+                                                                        </template>
+                                                                    </div>
+                                                                </template>
+                                                            </div>
+                                                            <template lwc:if={child.showDropIndicatorAfter}>
+                                                                <div key={child.dropAfterKey} class="drop-indicator"></div>
+                                                            </template>
+                                                        </template>
+                                                    </template>
+                                                    <template lwc:else>
+                                                        <div class="col-empty">Drop a component here</div>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    <!-- LEAF BLOCK (top level) -->
+                                    <template lwc:else>
+                                        <div class={b.cssClass} draggable="true" onclick={handleBlockClick} data-block-id={b.id}
+                                             ondragstart={handleBlockDragStart} ondragend={handleDragEnd}
+                                             ondragover={handleBlockDragOver} ondrop={handleBlockDrop} ondragleave={handleBlockDragLeave}>
+                                            <div class="drag-handle" title="Drag to reorder">
+                                                <lightning-icon icon-name="utility:drag_and_drop" size="xx-small" alternative-text="Drag"></lightning-icon>
+                                            </div>
+                                            <div class="canvas-block-summary">{b.summary}</div>
+                                            <div class="canvas-block-actions">
+                                                <lightning-button-icon icon-name="utility:up" size="x-small" variant="bare" data-block-id={b.id} onclick={handleBlockMoveUp} alternative-text="Move up"></lightning-button-icon>
+                                                <lightning-button-icon icon-name="utility:down" size="x-small" variant="bare" data-block-id={b.id} onclick={handleBlockMoveDown} alternative-text="Move down"></lightning-button-icon>
+                                                <lightning-button-icon icon-name="utility:delete" size="x-small" variant="bare" data-block-id={b.id} onclick={handleBlockDelete} alternative-text="Delete"></lightning-button-icon>
+                                            </div>
+                                        </div>
+                                        <template lwc:if={b.isSelected}>
+                                            <div class="inline-props">
+                                                <div class="inline-props-title">{propsPanelTitle} — properties</div>
+                                                <template lwc:if={isTextOrHeading}>
+                                                    <div class="spans-editor-title">Content (mix text + fields)</div>
+                                                    <template for:each={spansForRender} for:item="s">
+                                                        <div key={s.key} class="span-row">
+                                                            <template lwc:if={s.isText}>
+                                                                <span class="span-type">Aa</span>
+                                                                <lightning-input variant="label-hidden" type="text" value={s.value} data-span-index={s.index} onchange={handleSpanTextChange} class="span-input"></lightning-input>
+                                                            </template>
+                                                            <template lwc:if={s.isToken}>
+                                                                <span class="span-type span-type_token">&#123;&#125;</span>
+                                                                <lightning-combobox variant="label-hidden" value={s.value} options={fieldOptions} data-span-index={s.index} onchange={handleSpanTokenChange} class="span-input"></lightning-combobox>
+                                                            </template>
+                                                            <lightning-button-icon icon-name="utility:up" size="x-small" variant="bare" data-span-index={s.index} onclick={handleSpanMoveUp} alternative-text="Move up"></lightning-button-icon>
+                                                            <lightning-button-icon icon-name="utility:down" size="x-small" variant="bare" data-span-index={s.index} onclick={handleSpanMoveDown} alternative-text="Move down"></lightning-button-icon>
+                                                            <lightning-button-icon icon-name="utility:close" size="x-small" variant="bare" data-span-index={s.index} onclick={handleSpanDelete} alternative-text="Delete"></lightning-button-icon>
+                                                        </div>
+                                                    </template>
+                                                    <div class="spans-editor-actions">
+                                                        <lightning-button label="+ Text" variant="neutral" onclick={handleAddTextSpan}></lightning-button>
+                                                        <lightning-combobox placeholder="+ Field…" variant="label-hidden" options={fieldOptions} onchange={handleAddTokenSpan} class="span-add-field"></lightning-combobox>
+                                                    </div>
+                                                    <div class="spans-editor-hint">Tip: drag a field from the palette directly onto this block.</div>
+                                                    <div class="slds-grid slds-gutters slds-m-top_small">
+                                                        <div class="slds-col"><lightning-input label="Align" value={selectedBlock.props.align} data-key="align" onchange={handlePropertyChange}></lightning-input></div>
+                                                        <div class="slds-col"><lightning-input label="Font Size" value={selectedBlock.props.size} data-key="size" onchange={handlePropertyChange}></lightning-input></div>
+                                                        <div class="slds-col slds-grid slds-grid_vertical-align-end"><lightning-input type="checkbox" label="Bold" checked={selectedBlock.props.bold} data-key="bold" onchange={handlePropertyChange}></lightning-input></div>
+                                                    </div>
+                                                </template>
+                                                <template lwc:if={isImage}>
+                                                    <lightning-combobox label="Signature Type" value={selectedBlock.props.signatureType} options={signatureTypeOptions} data-key="signatureType" onchange={handlePropertyChange}></lightning-combobox>
+                                                    <lightning-input label="Width" value={selectedBlock.props.width} data-key="width" onchange={handlePropertyChange}></lightning-input>
+                                                    <lightning-input label="Height" value={selectedBlock.props.height} data-key="height" onchange={handlePropertyChange}></lightning-input>
+                                                </template>
+                                                <template lwc:if={isSpacer}>
+                                                    <lightning-input label="Height" value={selectedBlock.props.height} data-key="height" onchange={handlePropertyChange}></lightning-input>
+                                                </template>
+                                                <template lwc:if={isTable}>
+                                                    <div class="slds-text-body_small slds-text-color_weak">
+                                                        Table from <code>{selectedBlock.props.relation}</code>. Column editing UI coming next iteration — for now, edit JSON via the Live Preview component.
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </template>
+                                </div>
+                                <template lwc:if={b.showDropIndicatorAfter}>
+                                    <div key={b.dropAfterKey} class="drop-indicator"></div>
+                                </template>
+                            </template>
+                        </template>
+                        <template lwc:else>
+                            <div class="canvas-empty">Drop blocks here, or click them in the left palette.</div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- ============================== PREVIEW ============================== -->
+                <div class="preview-wrap">
+                    <div class="slds-text-title slds-m-bottom_x-small">Live Preview</div>
+                    <div class="preview-pane">
+                        <div class="preview-content" style={previewStyle} lwc:dom="manual"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </lightning-card>
+</template>

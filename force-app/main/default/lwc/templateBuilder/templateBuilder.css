@@ -1,0 +1,341 @@
+.builder-toolbar {
+    background: #f4f6f9;
+    border-bottom: 1px solid #d8dde6;
+}
+
+.import-status {
+    display: flex;
+    align-items: center;
+    background: #fffbe5;
+    border-bottom: 1px solid #f5e88a;
+    padding-left: 28px;
+    position: relative;
+}
+
+.builder-grid {
+    display: grid;
+    grid-template-columns: 240px 1fr 1fr;
+    gap: 12px;
+    padding: 12px;
+    min-height: 720px;
+}
+
+/* ---------------- Palette ---------------- */
+.palette {
+    background: #fafbfc;
+    border: 1px solid #d8dde6;
+    border-radius: 4px;
+    padding: 10px;
+    overflow-y: auto;
+    max-height: 760px;
+}
+
+.palette-section-header {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+}
+
+.palette-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.palette-fields {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid #ebedf0;
+    border-radius: 4px;
+    padding: 4px;
+    background: #fff;
+}
+
+.palette-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid #d8dde6;
+    border-radius: 4px;
+    cursor: grab;
+    font-size: 13px;
+    user-select: none;
+}
+
+.palette-item:hover {
+    background: #eef4fb;
+    border-color: #1589ee;
+}
+
+.palette-field {
+    border: 1px solid #f1f1f1;
+    background: #fafbfc;
+    padding: 4px 6px;
+    font-size: 12px;
+}
+
+.palette-field:hover {
+    background: #eef4fb;
+}
+
+/* ---------------- Canvas ---------------- */
+.canvas-wrap {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.canvas {
+    flex: 1;
+    background: #fff;
+    border: 2px dashed #b0b7c0;
+    border-radius: 4px;
+    padding: 12px;
+    min-height: 720px;
+    overflow-y: auto;
+}
+
+.canvas-empty {
+    text-align: center;
+    color: #888;
+    padding: 60px 20px;
+    font-size: 13px;
+}
+
+.canvas-block-wrap {
+    margin-bottom: 6px;
+}
+
+.canvas-block {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #f9fafc;
+    border: 1px solid #d8dde6;
+    border-radius: 4px;
+    cursor: grab;
+    gap: 8px;
+    /* Disable text selection so the browser can't fall back to text-drag
+     * when the user tries to grab the block. We need real element-drag. */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.canvas-block:active {
+    cursor: grabbing;
+}
+
+.drag-handle {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 26px;
+    color: #aaa;
+    cursor: grab;
+    border-radius: 2px;
+    user-select: none;
+}
+
+/* Children must not intercept pointer events, otherwise the browser
+ * may fire dragstart on the icon (which isn't draggable) instead of on
+ * the handle (which is). */
+.drag-handle * {
+    pointer-events: none;
+}
+
+.drag-handle:hover {
+    color: #1589ee;
+    background: #eef4fb;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.canvas-block:hover {
+    background: #eef4fb;
+    border-color: #1589ee;
+}
+
+.canvas-block_selected {
+    background: #ddebf7;
+    border-color: #1589ee;
+    box-shadow: 0 0 0 2px rgba(21, 137, 238, 0.2);
+}
+
+.canvas-block_field-drop {
+    background: #d6f5d6;
+    border-color: #0a7c0a;
+    border-style: dashed;
+    border-width: 2px;
+    box-shadow: 0 0 0 2px rgba(10, 124, 10, 0.35);
+}
+
+.canvas-block-summary {
+    font-size: 13px;
+    color: #222;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.canvas-block-actions {
+    display: flex;
+    gap: 2px;
+}
+
+.inline-props {
+    background: #f4faff;
+    border: 1px solid #1589ee;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    padding: 12px 14px;
+    margin-top: -1px;
+    margin-bottom: 8px;
+}
+
+.inline-props-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1589ee;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+
+/* ---------------- Row + columns ---------------- */
+.row-columns {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 8px 0;
+    align-items: stretch;
+}
+
+.row-column {
+    background: #fcfdff;
+    border: 1px dashed #bbb;
+    border-radius: 4px;
+    padding: 8px;
+    min-height: 60px;
+    flex: 0 0 auto;
+}
+
+.row-column:hover {
+    border-color: #1589ee;
+}
+
+.col-empty {
+    text-align: center;
+    color: #aaa;
+    font-style: italic;
+    font-size: 12px;
+    padding: 14px 6px;
+}
+
+.canvas-block-wrap.nested {
+    margin-bottom: 4px;
+}
+
+.canvas-block-wrap.nested .canvas-block {
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.drop-indicator {
+    height: 4px;
+    margin: 2px 0;
+    background: #1589ee;
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(21, 137, 238, 0.6);
+}
+
+/* ---------------- Spans editor (text/heading blocks) ---------------- */
+.spans-editor-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+
+.span-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    background: #fff;
+    border: 1px solid #e0e3e8;
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+.span-type {
+    flex: 0 0 28px;
+    font-family: Consolas, Menlo, Monaco, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #777;
+    text-align: center;
+    background: #f4f6f9;
+    border-radius: 3px;
+    padding: 2px 0;
+}
+
+.span-type_token {
+    color: #0a7c0a;
+    background: #e8f5e8;
+}
+
+.span-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.spans-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.span-add-field {
+    flex: 1 1 auto;
+}
+
+.spans-editor-hint {
+    font-size: 11px;
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+/* ---------------- Preview ---------------- */
+.preview-wrap {
+    display: flex;
+    flex-direction: column;
+}
+
+.preview-pane {
+    flex: 1;
+    width: 100%;
+    height: 720px;
+    border: 1px solid #d8dde6;
+    border-radius: 4px;
+    background: #fff;
+    overflow: auto;
+}
+
+.preview-content {
+    box-sizing: border-box;
+    width: 100%;
+}

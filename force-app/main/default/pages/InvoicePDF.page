@@ -1,0 +1,174 @@
+<apex:page controller="InvoicePDFController" renderAs="PDF">
+    <style type="text/css">
+    </style>
+    <div class="pageWrapper" style="padding: 20px; font-size: 12px; font-family: Arial, Helvetica, sans-serif;">
+        <div class="header" style="margin-bottom: 20px;">
+            <table class="tableClass" cellspacing="0" cellpadding="2" style="min-width: 100%; border: 0px; -webkit-border-vertical-spacing: 0px; -webkit-border-horizontal-spacing: 0px; border-collapse: collapse;">
+                <tr>
+                    <td class="column1" style="width: 34%;"><apex:image url="{!$Resource.OpenWacca_Logo_Black_Transparent}" width="100%" height="100%"/></td>
+                    <td class="column2" style="width: 20%;">&nbsp;</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="font-size: 16px; font-weight: bold; width: 16%;">INVOICE</td>
+                    <td class="column5" style="width: 18%;">&nbsp;</td>
+                </tr>
+            </table>
+        </div>
+        <div class="infoSection" style="margin-bottom: 20px;">
+            <table class="tableClass" cellspacing="0" cellpadding="2" style="min-width: 100%; border: 0px; -webkit-border-vertical-spacing: 0px; -webkit-border-horizontal-spacing: 0px; border-collapse: collapse;">
+                <tr>
+                    <td class="column1" style="width: 34%;">11001 West 120th Avenue</td>
+                    <td class="column2" style="width: 20%;">&nbsp;</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 16%;">Invoice #:</td>
+                    <td class="column5" style="width: 18%;">{!invoice.Name}</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 34%;">Suite 400</td>
+                    <td class="column2" style="width: 20%;">&nbsp;</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 16%;">
+                        <apex:outputText value="{0,date,MM/dd/yyyy}">
+                            <apex:param value="{!invoice.Invoice_Start_Date__c}" />
+                        </apex:outputText>
+                    </td>
+                    <td class="column5" style="width: 18%;">to&nbsp;
+                        <apex:outputText value="{0,date,MM/dd/yyyy}">
+                            <apex:param value="{!invoice.Invoice_End_Date__c}" />
+                        </apex:outputText>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 34%;">Broomfield, CO 80021</td>
+                    <td class="column2" style="width: 20%;">&nbsp;</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 16%;">&nbsp;</td>
+                    <td class="column5" style="width: 18%;">&nbsp;</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 34%;">1-800-214-0865</td>
+                    <td class="column2" style="width: 20%;">&nbsp;</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 16%;">INVOICE DUE</td>
+                    <td class="column5 heavyBorder" style="width: 18%; border: 2px solid #000;">
+                        <apex:outputText value="{0,date,MM/dd/yyyy}">
+                            <apex:param value="{!invoice.Invoice_Due_Date__c}" />
+                        </apex:outputText>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <div class="toForSection" style="margin-bottom: 20px;">
+            <table class="tableClass" cellspacing="0" cellpadding="2" style="min-width: 100%; border: 0px; -webkit-border-vertical-spacing: 0px; -webkit-border-horizontal-spacing: 0px; border-collapse: collapse;">
+                <tr>
+                    <td class="column1" style="border-bottom: 1px solid #000; width: 54%;">To:</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="border-bottom: 1px solid #000; width: 34%;">For:</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 54%;">{!invoice.Invoiced_To__r.Account_Legal_Name__c}</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 34%;">{!invoice.Project__r.Name}</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 54%;">{!invoice.Invoiced_To__r.Invoice_Attn_Line__c}</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 34%;">{!invoice.Project__r.PO_Number__c}</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 54%;">{!invoice.Invoiced_To__r.BillingStreet}</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 34%;">&nbsp;</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="width: 54%;">{!invoice.Invoiced_To__r.BillingCity}, {!invoice.Invoiced_To__r.BillingState} {!invoice.Invoiced_To__r.BillingPostalCode}</td>
+                    <td class="column3" style="width: 12%;">&nbsp;</td>
+                    <td class="column4" style="width: 34%;">&nbsp;</td>
+                </tr>
+            </table>
+        </div>
+        <div class="detailTableSection" style="margin-bottom: 20px;">
+            <table class="tableClass" cellspacing="0" cellpadding="2" style="min-width: 100%; border: 0px; border-collapse: collapse;">
+                <tr>
+                    <td class="column1" style="border: 1px solid #BBB; border-bottom: 2px solid #000; width: 34%; background-color: #BBB; font-weight: bold;">SUMMARY</td>
+                    <td class="column2" style="border: 1px solid #BBB; border-bottom: 2px solid #000; width: 20%; background-color: #BBB;">&nbsp;</td>
+                    <td class="column3" style="border: 1px solid #BBB; border-bottom: 2px solid #000; width: 12%; background-color: #BBB;">&nbsp;</td>
+                    <td class="column4" style="border: 1px solid #BBB; border-bottom: 2px solid #000; width: 16%; background-color: #BBB;">&nbsp;</td>
+                    <td class="column5" style="border: 1px solid #BBB; border-bottom: 2px solid #000; width: 18%; background-color: #BBB;">&nbsp;</td>
+                </tr>
+                <tr>
+                    <td class="column1" style="border: 1px solid #333; width: 34%; background-color: #CCC; font-weight: bold;">Project</td>
+                    <td class="column2" style="border: 1px solid #333; width: 20%; background-color: #CCC; font-weight: bold;">Resource</td>
+                    <td class="column3" style="border: 1px solid #333; width: 12%; background-color: #CCC; font-weight: bold;">Hours</td>
+                    <td class="column4" style="border: 1px solid #333; width: 16%; background-color: #CCC; font-weight: bold;">Rate</td>
+                    <td class="column5" style="border: 1px solid #333; width: 18%; background-color: #CCC; font-weight: bold;">Amount</td>
+                </tr>
+                <apex:repeat value="{!detailRows}" var="dr">
+                    <tr>
+                        <td class="column1" style="border: 1px solid #333; width: 34%; background-color: {!dr.bgColor};">{!dr.project}</td>
+                        <td class="column2" style="border: 1px solid #333; width: 20%; background-color: {!dr.bgColor};">{!dr.resource}</td>
+                        <td class="column3" style="border: 1px solid #333; width: 12%; background-color: {!dr.bgColor};">{!dr.hours}</td>
+                        <td class="column4" style="border: 1px solid #333; width: 16%; background-color: {!dr.bgColor};">
+                            <apex:outputText value="{0, number, $###,###,##0.00}">
+                                <apex:param value="{!dr.rate}" />
+                            </apex:outputText>
+                        </td>
+                        <td class="column5" style="border: 1px solid #333; width: 18%; background-color: {!dr.bgColor};">
+                            <apex:outputText value="{0, number, $###,###,##0.00}">
+                                <apex:param value="{!dr.amount}" />
+                            </apex:outputText>
+                        </td>
+                    </tr>
+                </apex:repeat>
+                <tr>
+                    <td class="column1" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 34%; font-weight: bold;">Work Total</td>
+                    <td class="column2" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 20%; font-weight: bold;">&nbsp;</td>
+                    <td class="column3" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 12%; font-weight: bold;">{!totalHours}</td>
+                    <td class="column4" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 16%; font-weight: bold;">
+                        <apex:outputText value="{0, number, $###,###,##0.00}">
+                            <apex:param value="{!totalRate}" />
+                        </apex:outputText>
+                    </td>
+                    <td class="column5" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 18%; font-weight: bold;">
+                        <apex:outputText value="{0, number, $###,###,##0.00}">
+                            <apex:param value="{!totalWork}" />
+                        </apex:outputText>
+                    </td>
+                </tr>
+				<apex:outputPanel layout="none" rendered="{!NOT(ISBLANK(invoice.Deposit_Invoice__c))}">
+                    <tr rendered="{!NOT(ISBLANK(invoice.Deposit_Invoice__c))}">
+                        <td class="column1" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 34%; font-weight: bold;">Credit Applied From {!invoice.Deposit_Invoice__r.Name}</td>
+                        <td class="column2" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 20%; font-weight: bold;">&nbsp;</td>
+                        <td class="column3" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 12%; font-weight: bold;">&nbsp;</td>
+                        <td class="column4" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 16%; font-weight: bold;">&nbsp;</td>
+                        <td class="column5" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #CCC; width: 18%; font-weight: bold;">
+                            <apex:outputText value="{0, number, $###,###,##0.00}">
+                                <apex:param value="{!creditApplied}" />
+                            </apex:outputText>
+                        </td>
+                    </tr>
+                </apex:outputPanel>
+                <tr>
+                	<td class="column1" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #BBB; width: 34%; font-weight: bold;">TOTAL DUE</td>
+                    <td class="column2" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #BBB; width: 20%; font-weight: bold;">&nbsp;</td>
+                    <td class="column3" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #BBB; width: 12%; font-weight: bold;">&nbsp;</td>
+                    <td class="column4" style="border: 1px solid #333; border-top: 2px solid #000; background-color: #BBB; width: 16%; font-weight: bold;">&nbsp;</td>
+                    <td class="column5" style="border: 2px solid #333; border-top: 2px solid #000; background-color: #BBB; width: 18%; font-weight: bold;">
+                        <apex:outputText value="{0, number, $###,###,##0.00}">
+                            <apex:param value="{!totalAmount}" />
+                        </apex:outputText>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <div class="footer" style="margin-bottom: 20px;">
+            <table class="tableClass" cellspacing="0" cellpadding="2" style="min-width: 100%; border: 0px; -webkit-border-vertical-spacing: 0px; -webkit-border-horizontal-spacing: 0px; border-collapse: collapse;">
+                <tr>
+                    <td style="width: 100%; text-align: center;">Please remit payment on or before the due date listed above</td>
+                </tr>
+                <tr>
+                    <td style="width: 100%; text-align: center;">Questions concerning this invoice? Please call Billing at 800-214-0865</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</apex:page>

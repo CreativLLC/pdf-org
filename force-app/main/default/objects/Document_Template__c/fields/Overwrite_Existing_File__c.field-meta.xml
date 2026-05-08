@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Overwrite_Existing_File__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>If true, regenerating replaces the prior PDF (matching by Source_Template_Version__c on ContentVersion). If false, each generation creates a new file.</description>
+    <externalId>false</externalId>
+    <label>Overwrite Existing File</label>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

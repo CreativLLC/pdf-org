@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Match_Value__c</fullName>
+    <description>Value to compare against. For operator In, comma-separated list. Ignored when operator is NotNull or Default.</description>
+    <externalId>false</externalId>
+    <label>Match Value</label>
+    <length>255</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

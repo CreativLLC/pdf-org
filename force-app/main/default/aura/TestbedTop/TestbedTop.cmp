@@ -1,0 +1,4 @@
+<aura:component access="global" >
+    <div>Top Div</div>
+    <c:TestbedMiddle />
+</aura:component>

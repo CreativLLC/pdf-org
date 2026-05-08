@@ -1,0 +1,39 @@
+<template>
+    <lightning-card title="Document Generator" icon-name="standard:document">
+        <div class="slds-p-around_small">
+            <template lwc:if={isMisconfigured}>
+                <div class="slds-text-color_error slds-m-bottom_small">
+                    Set <strong>Document Template ID</strong> or <strong>Document Template Name</strong> on this component in the Lightning App Builder.
+                </div>
+            </template>
+
+            <lightning-button
+                label={effectiveLabel}
+                variant={buttonVariant}
+                icon-name={iconName}
+                onclick={handleClick}
+                disabled={isGenerating}>
+            </lightning-button>
+
+            <template lwc:if={isGenerating}>
+                <div class="slds-m-top_x-small slds-text-color_weak">
+                    <lightning-spinner alternative-text="Generating..." size="small" variant="brand"></lightning-spinner>
+                    <span class="slds-m-left_small">Generating PDF…</span>
+                </div>
+            </template>
+
+            <template lwc:if={lastResult}>
+                <div class="slds-m-top_small slds-text-body_small">
+                    Last generated: <strong>{lastResult.fileName}</strong>
+                    <lightning-button
+                        label="Open"
+                        variant="base"
+                        icon-name="utility:open"
+                        onclick={handleOpenFile}
+                        class="slds-m-left_x-small">
+                    </lightning-button>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

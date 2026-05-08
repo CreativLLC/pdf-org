@@ -1,0 +1,47 @@
+<apex:page controller="CertificateController" renderas="pdf">
+<table width="700px">
+	<tr>
+		<td width="250px">
+			<apex:image url="{!$Resource.OsibtysWebLogo}" width="150px" height="75px"/>
+		</td>
+		<td width="450px" align="right">
+			&nbsp;
+		</td>
+	</tr>
+	<tr>
+		<td width="250px">
+			<font color="#666666">11596 Marshall St.<br/>Westminster, CO 80020<br/>www.osibtys.com</font>
+		</td>
+		<td width="450px" align="right">		
+			<b>{!contract.Account.Name}</b><br/>
+			Contract:&nbsp;{!contract.ContractNumber}<br/>
+			Expires:&nbsp;&nbsp;{!expiration}
+		</td>
+	</tr>
+	<tr>
+		<td width="700px" align="center" colspan="2">
+			<br/>
+			<h3>Certificate of Preferred Customer Status</h3>
+			<br/>&nbsp;
+		</td>
+	</tr>
+	<tr>
+		<td width="700px" align="left" colspan="2">
+			This letter certifies that, as of {!currentDate}, {!contract.Account.Name} is a Preferred Customer of Osibtys.  As a Preferred Customer, {!contract.Account.Name} is entitled to receive services provided by Osibtys at a 20% discount from list price at the time that services are rendered.  This entitlement expires {!expiration}.
+			<br/>&nbsp; 
+		</td>
+	</tr>
+	<tr>
+		<td width="700px" align="left" colspan="2">
+			When contacting Osibtys regarding this entitlement, or services to be rendered under this entitlement, please reference Contract# {!contract.ContractNumber}.
+			<br/>&nbsp;
+		</td>
+	</tr>
+	<tr>
+		<td width="700px" align="left" colspan="2">
+			Thank you, we appreciate your business.<br/><br/>Sincerely,<br/>Charles Howard<br/>Founder
+			<br/>&nbsp;
+		</td>
+	</tr>
+</table>
+</apex:page>

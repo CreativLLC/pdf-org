@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>66.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Template Builder</masterLabel>
+    <description>Drag-and-drop template builder for Document Generator templates. Palette of fields + layout primitives, canvas, properties panel, live preview.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+        <target>lightning__AppPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <objects>
+                <object>Template_Version__c</object>
+            </objects>
+        </targetConfig>
+        <targetConfig targets="lightning__AppPage">
+            <property name="templateVersionIdOverride" label="Template Version Id" type="String"
+                      description="ID of the Template_Version__c to edit. Required when placing this on an App Page."/>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

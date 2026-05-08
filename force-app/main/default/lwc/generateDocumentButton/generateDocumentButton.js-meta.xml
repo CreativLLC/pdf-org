@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>66.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Generate Document Button</masterLabel>
+    <description>Button that runs PdfGeneratorController against the current record using a configured Document Template.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+        <target>lightning__AppPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <property name="documentTemplateId" label="Document Template ID" type="String"
+                      description="ID of the Document_Template__c to use. Takes precedence over name if both are set."/>
+            <property name="documentTemplateName" label="Document Template Name" type="String"
+                      description="Name of the Document_Template__c to use (used if ID is blank). More portable across orgs/environments than ID."/>
+            <property name="buttonLabel" label="Button Label" type="String" default="Generate PDF"/>
+            <property name="buttonVariant" label="Button Variant" type="String" default="brand"
+                      description="One of: brand, neutral, success, destructive, brand-outline, etc."/>
+            <property name="iconName" label="Button Icon" type="String" default="utility:download"
+                      description="SLDS utility icon name, e.g. utility:download, utility:print, utility:file."/>
+        </targetConfig>
+        <targetConfig targets="lightning__AppPage">
+            <property name="documentTemplateId" label="Document Template ID" type="String"/>
+            <property name="documentTemplateName" label="Document Template Name" type="String"/>
+            <property name="buttonLabel" label="Button Label" type="String" default="Generate PDF"/>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

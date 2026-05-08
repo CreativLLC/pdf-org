@@ -1,0 +1,49 @@
+/**
+ * Created by charl on 3/24/2023.
+ */
+
+.mainDiv{
+    background-color: white;
+}
+
+.headerDiv{
+    /* background-color: white; */
+    /* border-bottom: 1px solid darkgrey; */
+    padding-bottom: 12px;
+}
+
+.bodyDiv{
+    background-color: white;
+}
+
+.datesRow{
+    font-weight: bold;
+    background-color: #BCCBC9;
+    border-bottom: 1px solid black;
+}
+
+.mainRow{
+    font-weight: bold;
+    background-color: #E9ECE6;
+}
+
+.subRow{
+    background-color: white;
+}
+
+.overAllocated{
+    background-color: rgba(255,0,0,0.1);
+}
+
+.underAllocated{
+    background-color: rgba(0,0,255,0.1);
+}
+
+.allocated{
+    /* background-color: rgba(143,188,143,0.1); */
+}
+
+.leftColumn{
+    width: 1%;
+    white-space: nowrap;
+}

@@ -14,5 +14,6 @@ trigger OpportunityTrigger on Opportunity (before insert, before update, before 
         else if(trigger.isUpdate) OpportunityUtils.handleAfterUpdate();
         else if(trigger.isDelete) OpportunityUtils.handleAfterDelete();
         else if(trigger.isUndelete) OpportunityUtils.handleAfterUndelete();
-    }  
+    }
+    new OpportunityTriggerHandler().run();
 }

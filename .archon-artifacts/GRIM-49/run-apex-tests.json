@@ -1,0 +1,20 @@
+{
+  "result": "pass",
+  "failure_reason": "",
+  "total_tests": 9,
+  "passing_tests": 9,
+  "failing_tests": 0,
+  "coverage_threshold": 75,
+  "per_class_coverage": [
+    {
+      "class": "OpportunityTriggerHandler",
+      "coverage": 91
+    },
+    {
+      "class": "TriggerHandler",
+      "coverage": 92
+    }
+  ],
+  "classes_below_threshold": [],
+  "tests_artifact": ".archon-artifacts/GRIM-49/sf-apex-test.json"
+}

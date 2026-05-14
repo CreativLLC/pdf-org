@@ -1,6 +1,6 @@
 # Workflows
 
-Archon DAG YAML files that define how each kind of Salesforce work is performed end-to-end. **Phase 4 shipped the first pair** — [`sf-dispatcher.yaml`](./sf-dispatcher.yaml) (the `/sf` entry point) and [`sf-apex-change.yaml`](./sf-apex-change.yaml) (the first task-family workflow). The remaining task-family workflows ship in Phase 7+.
+Archon DAG YAML files that define how each kind of Salesforce work is performed end-to-end. **Phase 4 shipped the first pair** — [`sf-dispatcher.yaml`](./sf-dispatcher.yaml) (the `/sf` entry point) and [`sf-apex-change.yaml`](./sf-apex-change.yaml) (the first task-family workflow). **Phase 5 added [`sf-discover-org.yaml`](./sf-discover-org.yaml)** — one-time-per-engagement baseline doc generation from existing SFDX metadata, per [ADR-0011](../decisions/0011-sf-discover-org-workflow.md). The remaining task-family workflows ship in Phase 7+.
 
 > **What goes here?** YAML files matching the conventions in [`../decisions/0003-workflow-yaml-scope-and-naming.md`](../decisions/0003-workflow-yaml-scope-and-naming.md). Each YAML defines a coarse task family and uses internal classification branches for variation. The structural backbone (pull Jira → classify → smoke-validate → verify org → load context → plan → gate → execute → validate → document → update Jira → log) is required.
 

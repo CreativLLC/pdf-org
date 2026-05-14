@@ -26,14 +26,27 @@ These are the canonical commands that the structural backbone requires. Each wil
 
 ### Per-workflow commands
 
-Each workflow has its own per-step command files. For `sf-apex-change` (shipped in Phase 4):
+Each workflow has its own per-step command files.
+
+**`sf-apex-change`** (Phase 4):
 
 | Command | Purpose |
 |---|---|
 | `sf-apex-change-plan.md` | Produce the structured plan: file changes, test strategy, doc outputs, risks |
 | `sf-apex-change-execute.md` | Implement the change against the working tree (no deploy/test/Jira — those are downstream) |
 | `sf-apex-change-validate.md` | Orchestrate the four validation scripts (deploy, tests+coverage, FLS/CRUD, destructive) and aggregate |
-| `sf-apex-change-document.md` | Write changelog entry; update `docs/objects/<Object>.md` for trigger changes |
+| `sf-apex-change-document.md` | Aggressively update every state-of-org doc the change touched (per ADR-0010); no per-ticket changelog |
+
+**`sf-discover-org`** (Phase 5, per [ADR-0011](../decisions/0011-sf-discover-org-workflow.md)):
+
+| Command | Purpose |
+|---|---|
+| `sf-discover-classify.md` | Inventory `force-app/main/default/`, decide which objects / flows / integrations are significant enough to document |
+| `sf-discover-document-objects.md` | Iterate over significant objects, write/update `docs/objects/*.md` (opus[1m]) |
+| `sf-discover-document-flows.md` | Iterate over significant Flows, write/update `docs/flows/*.md` (opus[1m]) |
+| `sf-discover-document-integrations.md` | Inventory + document external integrations → `docs/integrations/*.md` (opus[1m]) |
+| `sf-discover-synthesize-features.md` | Cluster the canonical docs into business-facing features → `docs/features/*.md` |
+| `sf-discover-update-index.md` | Rebuild `docs/index.md` from everything that now exists |
 
 (Sub-type classification within `sf-apex-change` is an inline `prompt:` node in the workflow YAML, not a separate command file — its prompt is workflow-specific.)
 

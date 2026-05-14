@@ -1,0 +1,201 @@
+name: sf-discover-org
+description: |
+  Generate baseline engagement documentation from SFDX metadata. One-time
+  per engagement (re-runnable after sandbox refresh). Inventories existing
+  custom objects, customized standard objects, Flows, Apex, and external
+  integrations; writes the canonical docs (objects/, flows/, integrations/)
+  and derived feature docs (features/) per ADR-0010's taxonomy.
+
+  Read-only on `force-app/`. Does NOT deploy, run tests, or modify metadata.
+  Documentation-only workflow.
+
+  Per ADR-0011 §Idempotency contract: re-runs preserve hand-edits
+  (docs whose frontmatter `last_updated_by` is not `archon-*`).
+
+  Invoked via Claude Code slash command `/sf-discover` or by direct
+  `archon workflow run sf-discover-org` invocation.
+
+provider: claude
+model: sonnet
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: VALIDATE + CLASSIFY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: smoke-validate-sfdx
+    prompt: |
+      Verify this engagement is an SFDX project with retrieved metadata
+      to document. Bail fast if not.
+
+      Checks:
+      1. `sfdx-project.json` exists at the engagement root.
+      2. `force-app/main/default/` directory exists and is non-empty.
+      3. At least one of: `objects/`, `classes/`, `triggers/`, `flows/`
+         directories exists under `force-app/main/default/`.
+
+      If any check fails, output `sfdx_present: "false"` with reasoning
+      that includes the specific fix the engineer needs (e.g., "run
+      `sf project retrieve start` first to pull metadata into source").
+
+      If all checks pass, output `sfdx_present: "true"` and list the
+      categories that have content (objects / classes / triggers /
+      flows / etc.).
+    allowed_tools: [Read, Glob, Bash]
+    output_format:
+      type: object
+      properties:
+        sfdx_present:
+          type: string
+          enum: ["true", "false"]
+        force_app_path:
+          type: string
+        categories_present:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+      required: [sfdx_present, force_app_path, categories_present, reasoning]
+
+  - id: classify-significance
+    command: sf-discover-classify
+    depends_on: [smoke-validate-sfdx]
+    when: "$smoke-validate-sfdx.output.sfdx_present == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: COST-CONFIRM GATE
+  # Show the engineer what discovery will do and an estimated token cost,
+  # before kicking off the three parallel opus[1m] agents.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: confirm-cost
+    prompt: |
+      You are the cost-confirmation gate. Show the engineer the discovery
+      plan and an estimated token / dollar cost based on the artifact
+      count from `classify-significance`, then ask them to proceed.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      sf-discover-org plan
+
+      Engagement:        $force_app_path
+      Significant objects:        N (per classify output)
+      Significant flows:          N
+      External integrations:      N
+      Apex classes referenced:    N
+
+      Will write or update:
+        docs/objects/<Object>.md         (N files)
+        docs/flows/<Flow>.md             (N files)
+        docs/integrations/<System>.md    (N files)
+        docs/features/<slug>.md          (after synthesis; usually 3–8)
+        docs/index.md                    (rebuilt)
+
+      Estimated tokens:  ~<calculated> M (mostly opus[1m] for parallel
+                          document-* nodes; sonnet for synthesis/index)
+      Estimated cost:    ~$<calculated> at current Anthropic pricing
+
+      Idempotency: re-runs preserve docs whose frontmatter
+      `last_updated_by` does not start with `archon-`.
+
+      Proceed? [y/N]
+      ───────────────────────────────────────────────
+      ```
+
+      ## Token-estimate formula (rough)
+
+      Per significant object: ~50K input + ~5K output (sonnet $/Mtok = $3 in, $15 out;
+      opus = ~5x). For opus on objects: ~$0.225 per object.
+      Flows: ~$0.15 per flow.
+      Integrations: ~$0.20 per system.
+      Synthesis + index: ~$0.50 flat.
+
+      Estimate = 0.225 * N_objects + 0.15 * N_flows + 0.20 * N_integrations + 0.50
+
+      ## Engineer response
+
+      Accept: `y` / `yes` → `proceed: "true"`
+      Accept: `n` / `no` / empty (default) → `proceed: "false"`
+
+      No typed-CONFIRM ceremony — discovery is non-destructive (read-only on force-app/,
+      idempotent on docs/). `y`/`N` is sufficient.
+    depends_on: [classify-significance]
+    when: "$smoke-validate-sfdx.output.sfdx_present == 'true'"
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        reasoning:
+          type: string
+      required: [proceed, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: CATEGORY-PARALLEL DOCUMENTATION
+  # Three opus[1m] agents run in parallel, each documenting one category.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document-objects
+    command: sf-discover-document-objects
+    depends_on: [confirm-cost]
+    when: "$confirm-cost.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  - id: document-flows
+    command: sf-discover-document-flows
+    depends_on: [confirm-cost]
+    when: "$confirm-cost.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  - id: document-integrations
+    command: sf-discover-document-integrations
+    depends_on: [confirm-cost]
+    when: "$confirm-cost.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: SYNTHESIZE FEATURES + UPDATE INDEX
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: synthesize-features
+    command: sf-discover-synthesize-features
+    depends_on: [document-objects, document-flows, document-integrations]
+    trigger_rule: all_success
+    context: fresh
+    model: sonnet
+
+  - id: update-index
+    command: sf-discover-update-index
+    depends_on: [synthesize-features]
+    context: fresh
+    model: sonnet
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: LOG
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-discovery-run
+    bash: |
+      set -euo pipefail
+
+      N_OBJECTS=$(ls docs/objects/*.md 2>/dev/null | grep -v README.md | wc -l)
+      N_FLOWS=$(ls docs/flows/*.md 2>/dev/null | grep -v README.md | wc -l)
+      N_INTEGRATIONS=$(ls docs/integrations/*.md 2>/dev/null | grep -v README.md | wc -l)
+      N_FEATURES=$(ls docs/features/*.md 2>/dev/null | grep -v README.md | wc -l)
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  -  sf-discover-org  objects=%d  flows=%d  integrations=%d  features=%d  result=success\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${N_OBJECTS}" "${N_FLOWS}" "${N_INTEGRATIONS}" "${N_FEATURES}" \
+        >> "$RUN_LOG"
+    depends_on: [update-index]

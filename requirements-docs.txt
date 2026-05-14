@@ -1,0 +1,6 @@
+# MkDocs Material build dependencies for the engagement's GitHub Actions
+# docs-deploy workflow (per ADR-0010 §5).
+# Pinned to known-good versions; bump deliberately when needed.
+
+mkdocs-material==9.5.42
+pymdown-extensions==10.11.2

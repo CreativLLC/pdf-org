@@ -1,0 +1,16 @@
+{
+  "result": "pass",
+  "failure_reason": "",
+  "total_tests": 2,
+  "passing_tests": 2,
+  "failing_tests": 0,
+  "coverage_threshold": 75,
+  "per_class_coverage": [
+    {
+      "class": "SimpleGreeter",
+      "coverage": 100
+    }
+  ],
+  "classes_below_threshold": [],
+  "tests_artifact": ".archon-artifacts/GRIM-48/sf-apex-test.json"
+}

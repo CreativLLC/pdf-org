@@ -1,0 +1,9 @@
+{
+  "result": "pass",
+  "scratch_org_alias": "meditrinaPOCsb",
+  "scratch_instance_url": "https://openwacca--pdf.sandbox.my.salesforce.com",
+  "components_deployed": 2,
+  "component_errors": 0,
+  "first_error": "",
+  "deploy_artifact": ".archon-artifacts/GRIM-48/sf-deploy.json"
+}

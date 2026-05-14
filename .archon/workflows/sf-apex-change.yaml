@@ -1,0 +1,502 @@
+name: sf-apex-change
+description: |
+  First task-family workflow per ADR-0003. Handles Apex classes, triggers,
+  and test classes — create / modify / extend / delete / rename. Sub-types,
+  gates, and validation strategy locked in ADR-0009.
+
+  Invoked by sf-dispatcher (`/sf <TICKET>` → classifier picks this workflow
+  → dispatcher's confirm gate → `archon run sf-apex-change ...`).
+
+  Inputs:
+    $ARGUMENTS — passed by sf-dispatcher's bash invoke node:
+                  `--ticket <KEY> --description "<text>"`
+
+  Structural backbone per ADR-0003:
+    1. extract-jira-key             (deterministic)
+    2. pull-jira-context            (command: pull-jira-context)
+    3. classify-sub-type            (LLM, scoped to this task family)
+    4. smoke-validate-claims        (verify ticket's concrete claims)
+    5. verify-org-context           (command: verify-org-context)
+    6. load-engagement-context      (command: load-engagement-context)
+    7. plan                         (command: sf-apex-change-plan)
+    8. gate                         (interactive, conditional per ADR-0009)
+    9. execute                      (command: sf-apex-change-execute)
+    10. validate                    (command: sf-apex-change-validate)
+    11. document                    (command: sf-apex-change-document)
+    12. update-jira                 (post comment + transition status)
+    13. log
+
+provider: claude
+model: sonnet
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH & CLASSIFY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: extract-jira-key
+    prompt: |
+      Extract the Jira ticket key from $ARGUMENTS.
+
+      Input: $ARGUMENTS  (e.g., `--ticket ACME-101 --description "..."`)
+
+      The ticket key must match `^[A-Z][A-Z0-9]+-\d+$`. If absent or
+      malformed, fail with:
+        `error: missing or invalid --ticket. Expected like ACME-101.`
+
+      Output ONLY the bare ticket key (no quotes, markdown, or extra text).
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        description:
+          type: string
+      required: [ticket, description]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [extract-jira-key]
+    context: fresh
+
+  - id: classify-sub-type
+    prompt: |
+      You are the sf-apex-change sub-type classifier. The dispatcher
+      already chose this workflow; your job is to pick the correct
+      sub-type from ADR-0009 §1, plus the scope and a few side flags
+      that downstream gates use.
+
+      ## Context
+
+      ### Jira ticket
+      $pull-jira-context.output
+
+      ### Engineer's free-form description
+      $extract-jira-key.output.description
+
+      ## Sub-types (ADR-0009)
+
+      | sub_type             | trigger                                                             |
+      |----------------------|---------------------------------------------------------------------|
+      | create-class         | New `.cls` (non-test) added                                         |
+      | modify-class         | Existing non-test `.cls` modified, no public-API removal            |
+      | add-method-to-class  | Modify-class that's purely additive (new method, no changes elsewhere) |
+      | delete-class         | A `.cls` is removed                                                 |
+      | create-trigger       | New `.trigger` added                                                |
+      | modify-trigger       | Existing `.trigger` modified                                        |
+      | create-test          | New test class added (`@IsTest` at class level)                     |
+      | modify-test          | Existing test class modified                                        |
+      | rename-apex-symbol   | Multi-file refactor: one file removes a symbol, others rename refs  |
+
+      ## Precedence (when ticket implies multiple)
+
+      `delete-class` > `rename-apex-symbol` > `modify-trigger` >
+      `create-trigger` > `modify-class` > `create-class` >
+      `add-method-to-class` > `modify-test` > `create-test`.
+
+      Higher-precedence sub-types have stricter gates; over-gate is safer
+      than under-gate.
+
+      ## Scope
+
+      Estimate, conservatively (round up when uncertain):
+      - small:  1–3 files, single subsystem, ticket is clear
+      - medium: 3–10 files, one or two subsystems, some investigation needed
+      - large:  10+ files, cross-subsystem, vague/exploratory
+
+      ## Side flags
+
+      - `touches_soql_dml`: `"true"` if the change clearly involves SOQL
+        or DML (the ticket mentions queries, inserts, updates, deletes,
+        or describes data-touching behavior). Triggers the FLS/CRUD
+        static check in validate.
+      - `touches_callouts`: `"true"` if the change clearly involves HTTP
+        callouts or named credentials. Not used as a gate here; surfaced
+        to the plan/execute prompts.
+      - `needs_external_research`: `"true"` if the fix depends on
+        specifics of an external library, API, or Salesforce platform
+        feature whose behavior is NOT apparent from the engagement docs
+        or codebase. (Phase 5+ will use this to gate web research nodes;
+        for Phase 4, the flag is recorded but doesn't change the DAG.)
+    depends_on: [pull-jira-context]
+    model: haiku
+    allowed_tools: []
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        sub_type:
+          type: string
+          enum:
+            - create-class
+            - modify-class
+            - add-method-to-class
+            - delete-class
+            - create-trigger
+            - modify-trigger
+            - create-test
+            - modify-test
+            - rename-apex-symbol
+        scope:
+          type: string
+          enum: [small, medium, large]
+        touches_soql_dml:
+          type: string
+          enum: ["true", "false"]
+        touches_callouts:
+          type: string
+          enum: ["true", "false"]
+        needs_external_research:
+          type: string
+          enum: ["true", "false"]
+        reasoning:
+          type: string
+      required:
+        - sub_type
+        - scope
+        - touches_soql_dml
+        - touches_callouts
+        - needs_external_research
+        - reasoning
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1.5: SMOKE-VALIDATE
+  # Verify the ticket's concrete claims match the codebase before any
+  # skip decision. Inaccurate claims → workflow falls back to the full
+  # pipeline (no shortcuts) and surfaces the disagreement at the gate.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: smoke-validate-claims
+    prompt: |
+      You are the smoke validator. Your job: check that the ticket's
+      claims about the code are ACCURATE so downstream gates rest on a
+      reliable foundation.
+
+      ## Context
+
+      ### Ticket
+      $pull-jira-context.output
+
+      ### Classifier output
+      $classify-sub-type.output
+
+      ## Task
+
+      Extract concrete, verifiable claims from the ticket body and recent
+      comments:
+      - Class / trigger / test names referenced (e.g. `RenewalCalculator`,
+        `RenewalTrigger`).
+      - Method names referenced.
+      - File paths in `force-app/main/default/classes/` or
+        `force-app/main/default/triggers/`.
+      - Field references (`Object__c.Field__c`).
+      - Quoted code snippets.
+      - Reproduction or expected-behavior commands.
+
+      Then verify each concrete claim against the engagement repo:
+      - Read cited file paths. Confirm existence.
+      - Grep for cited symbols (`grep -rn "<Symbol>" force-app/main/default/`).
+      - For field references, check the relevant `objects/*.object-meta.xml`
+        or `objects/<Obj>/fields/<Field>.field-meta.xml`.
+
+      ## Budget
+
+      Spend ~30 seconds. Check the 2–3 most load-bearing claims — the
+      ones the fix most clearly hinges on. Don't exhaust every mention.
+      Prefer false-negative safety (flag inaccurate when uncertain) over
+      false-positive (skipping a gate on shaky ground).
+
+      If the ticket has NO concrete claims (purely descriptive — e.g.,
+      "the renewal logic is broken" with no file paths, no symbols, no
+      reproducer), default `claims_accurate` to `"false"`. The workflow
+      will fall back to full pipeline behavior, which is the correct
+      response to vague tickets.
+
+      ## Output
+
+      Set `claims_accurate`:
+      - `"true"`  — the claims you checked match the current code; the
+                    ticket body is a reliable spec.
+      - `"false"` — one or more claims don't match reality; downstream
+                    gates should not trust the classifier's `scope` for
+                    skip decisions.
+
+      Include `mismatches` as a list of strings, one per discrepancy.
+    depends_on: [classify-sub-type]
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        claims_accurate:
+          type: string
+          enum: ["true", "false"]
+        mismatches:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+      required: [claims_accurate, mismatches, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: SF-SPECIFIC CONTEXT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-org-context
+    command: verify-org-context
+    depends_on: [smoke-validate-claims]
+    context: fresh
+
+  - id: load-engagement-context
+    command: load-engagement-context
+    depends_on: [verify-org-context]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: PLAN
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    command: sf-apex-change-plan
+    depends_on: [load-engagement-context, classify-sub-type, smoke-validate-claims]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: GATE (conditional per ADR-0009 §6)
+  # Fires when ANY:
+  #   - sub_type ∈ {delete-class, modify-trigger, rename-apex-symbol}
+  #   - scope == 'large'
+  #   - smoke-validate flagged inaccurate claims
+  #   - destructive-change static check or FLS/CRUD check failed
+  #     (those run in validate; this gate runs BEFORE execute, so it sees
+  #     only the sub_type / scope / smoke signals here. A second gate
+  #     after validate catches static-check failures.)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-pre-execute
+    prompt: |
+      You are the in-workflow confirm gate (pre-execute). Per ADR-0009 §6,
+      this gate fires only when the change is destructive, large, or
+      based on inaccurate ticket claims.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Ticket:      $extract-jira-key.output.ticket
+      Sub-type:    $classify-sub-type.output.sub_type
+      Scope:       $classify-sub-type.output.scope
+      Claims:      $smoke-validate-claims.output.claims_accurate
+                   (mismatches: see smoke-validate output)
+
+      Plan:        $plan.output  (summary — read full plan in $ARTIFACTS_DIR/plan.md)
+
+      Why this gate fired:
+        <list the trigger(s): delete-class / modify-trigger /
+         rename-apex-symbol / scope=large / claims_accurate=false>
+
+      Acceptance:
+        - If this gate fired due to a DESTRUCTIVE sub-type (delete-class
+          or rename-apex-symbol) OR a destructive change was detected,
+          require literal `CONFIRM` (uppercase, exact) — NOT `y`/`yes`.
+        - For modify-trigger, scope=large, or inaccurate claims, accept
+          `y` / `yes` (case-insensitive) — or `n` / `no` / empty to abort.
+        - Always accept `n` / `no` / empty to abort.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Show the engineer the plan summary and the trigger reason(s).
+      Wait for response. Emit structured output.
+
+      If the engineer aborts, the workflow stops cleanly. No code is
+      changed; no Jira transition occurs; the run log records the abort.
+    depends_on: [plan, classify-sub-type, smoke-validate-claims]
+    when: >-
+      $classify-sub-type.output.sub_type == 'delete-class' ||
+      $classify-sub-type.output.sub_type == 'modify-trigger' ||
+      $classify-sub-type.output.sub_type == 'rename-apex-symbol' ||
+      $classify-sub-type.output.scope == 'large' ||
+      $smoke-validate-claims.output.claims_accurate == 'false'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: EXECUTE
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: execute
+    command: sf-apex-change-execute
+    depends_on: [plan, gate-pre-execute]
+    # When gate-pre-execute is skipped (no trigger fired), this still runs.
+    # When it ran, only proceed if proceed == 'true'.
+    trigger_rule: none_failed_min_one_success
+    when: "$gate-pre-execute.output.proceed != 'false'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: VALIDATE
+  # Composite — the command internally orchestrates:
+  #   • scripts/deploy-to-scratch.sh
+  #   • scripts/run-apex-tests.sh
+  #   • scripts/check-destructive-changes.sh
+  #   • scripts/check-fls-crud.sh   (only if touches_soql_dml=='true')
+  # Coverage gate is enforced inside run-apex-tests.sh against
+  # engagement.yaml.coverage.per_class_target.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    command: sf-apex-change-validate
+    depends_on: [execute]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6.5: GATE (post-validate, for static-check failures)
+  # Fires when validate flagged FLS/CRUD or destructive issues that the
+  # pre-execute gate couldn't have seen (they depend on the executed code).
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-post-validate
+    prompt: |
+      You are the in-workflow confirm gate (post-validate). The static
+      checks flagged issues that need engineer judgment before the
+      workflow continues to document / update-jira.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Static check results:
+        Deploy to scratch:   $validate.output.deploy_result
+        Apex tests:          $validate.output.tests_result   (coverage threshold: $validate.output.coverage_threshold)
+        FLS/CRUD check:      $validate.output.fls_crud_result
+        Destructive check:   $validate.output.destructive_result
+
+      Issues found:
+        <list per the validate output>
+
+      Acceptance:
+        - If destructive_result == 'fail':  require literal `CONFIRM`.
+        - Else (FLS/CRUD failures only):    accept `y`/`yes`.
+        - Always accept `n`/`no`/empty to abort.
+
+      If you abort here, the code change remains in the working tree but
+      no docs are written, no Jira comment is posted, and the run log
+      records the abort. The engineer can fix and re-run, or revert the
+      working tree.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Surface the static-check details to the engineer, get their
+      response, emit structured output.
+    depends_on: [validate]
+    when: >-
+      $validate.output.fls_crud_result == 'fail' ||
+      $validate.output.destructive_result == 'fail'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: DOCUMENT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document
+    command: sf-apex-change-document
+    depends_on: [validate, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      $gate-post-validate.output.proceed != 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: UPDATE JIRA
+  # Two branches: success path (post structured comment, transition to
+  # in_review) and failure path (post failure comment, transition back to
+  # ready_for_dev). Only one fires per run.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: update-jira-success
+    command: update-jira-on-completion
+    depends_on: [document, validate]
+    when: "$validate.output.overall_result == 'pass'"
+    context: fresh
+
+  - id: update-jira-failure
+    command: update-jira-on-failure
+    depends_on: [validate, gate-pre-execute, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $validate.output.overall_result == 'fail' ||
+      $gate-pre-execute.output.proceed == 'false' ||
+      $gate-post-validate.output.proceed == 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 9: LOG
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-workflow-run
+    # Use Archon nested-field substitution instead of echo+jq, which breaks when the
+    # JSON output contains inner double quotes / parens (e.g., description text
+    # like `greet(String)`). The `// "skipped"` fallback isn't available via nested
+    # substitution, so optional fields are guarded via shell `${VAR:-default}`.
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      SUB_TYPE="$classify-sub-type.output.sub_type"
+      SCOPE="$classify-sub-type.output.scope"
+
+      # Validate result: optional fields use shell defaults when the node was skipped.
+      VALIDATE_RESULT="${validate_output_overall_result:-skipped}"
+      PRE_GATE_DECISION="${gate_pre_execute_output_proceed:-skipped}"
+      POST_GATE_DECISION="${gate_post_validate_output_proceed:-skipped}"
+
+      # If Archon supports nested-field substitution, prefer the explicit form; the
+      # shell defaults above protect against unset variables for skipped nodes.
+      [ "$validate.output.overall_result" != "" ] && VALIDATE_RESULT="$validate.output.overall_result" || true
+      [ "$gate-pre-execute.output.proceed" != "" ] && PRE_GATE_DECISION="$gate-pre-execute.output.proceed" || true
+      [ "$gate-post-validate.output.proceed" != "" ] && POST_GATE_DECISION="$gate-post-validate.output.proceed" || true
+
+      if [ "$VALIDATE_RESULT" = "pass" ] && [ "$PRE_GATE_DECISION" != "false" ] && [ "$POST_GATE_DECISION" != "false" ]; then
+        RESULT="success"
+      else
+        RESULT="failure"
+      fi
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  %s  sf-apex-change  sub_type=%s  scope=%s  result=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${SUB_TYPE}" "${SCOPE}" "${RESULT}" \
+        >> "$RUN_LOG"
+    depends_on: [update-jira-success, update-jira-failure]
+    trigger_rule: none_failed_min_one_success

@@ -1,0 +1,277 @@
+name: sf-dispatcher
+description: |
+  Entry point for `/sf <TICKET> "<description>"`. Per ADR-0001:
+  classify → confirm → invoke. Single command, mandatory confirmation gate.
+
+  This workflow does NOT execute any change work itself. It pulls the Jira
+  ticket, classifies the task into one of the task-family workflows defined
+  in ADR-0003, presents a confirmation gate showing the user which workflow
+  it will invoke and why, then shells out to the chosen task-family workflow
+  as a separate `archon run`.
+
+  Trigger:
+    /sf ACME-101 "add renewal_date field to Account"
+    /sf ACME-101 "..." --workflow sf-apex-change       # skip classification
+
+  Inputs:
+    $ARGUMENTS — "<TICKET-KEY> [\"<description>\"] [--workflow <name>]"
+
+  Outputs:
+    On success: the target task-family workflow has run and posted a
+                structured Jira comment.
+    On user-abort at confirm gate: workflow exits cleanly with no side effects.
+
+provider: claude
+model: sonnet
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: PARSE ARGS + PULL TICKET
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: parse-args
+    prompt: |
+      Parse the user's slash-command arguments.
+
+      Input: $ARGUMENTS
+
+      Expected format:
+        <TICKET-KEY> [<free-form description>] [--workflow <workflow-name>]
+
+      Rules:
+      - TICKET-KEY must match `^[A-Z][A-Z0-9]+-\d+$`. If it doesn't, fail
+        with: `error: invalid ticket key format. Expected like ACME-101.`
+      - If `--workflow <name>` is present, extract it as the override.
+        Otherwise leave override_workflow as the empty string.
+      - description is everything else (free text). May be empty.
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        description:
+          type: string
+        override_workflow:
+          type: string
+      required: [ticket, description, override_workflow]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [parse-args]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: CLASSIFY (skipped when --workflow override given)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: classify-task-family
+    prompt: |
+      You are the harness's task-family classifier. Given a Jira ticket and
+      the engineer's free-form description, pick the task-family workflow
+      that should handle this change.
+
+      ## Available workflows
+
+      | workflow_name           | covers                                                                         | shipped |
+      |-------------------------|--------------------------------------------------------------------------------|---------|
+      | sf-apex-change          | Apex classes, triggers, test classes — create/modify/extend/delete            | yes     |
+      | sf-metadata-change      | Custom objects, fields, validation rules, page layouts, picklists             | no      |
+      | sf-flow-change          | Record-triggered Flows, scheduled Flows, screen Flows, subflows               | no      |
+      | sf-lwc-change           | Lightning Web Components and backing Apex                                      | no      |
+      | sf-integration-change   | Callouts, webhooks, named credentials, platform events                        | no      |
+      | sf-permission-change    | Permission sets, profiles, sharing rules, OWD changes                         | no      |
+      | sf-data-correction      | One-off DML or anonymous Apex against existing data                           | no      |
+
+      ## Context
+
+      ### Jira ticket
+      $pull-jira-context.output
+
+      ### Engineer's description
+      $parse-args.output.description
+
+      ## Task
+
+      1. Identify the PRIMARY artifact the ticket asks to change. If the
+         ticket spans multiple artifact types (e.g., "add a field and the
+         Apex that consumes it"), pick the workflow whose artifact carries
+         the change's business logic — not the supporting metadata.
+
+      2. Output `workflow_name` (one of the enum), `scope` (small / medium /
+         large per ADR-0003), and a one-paragraph `reasoning`.
+
+      3. The ticket may carry a `task-type:<workflow-name>` label, extracted
+         by `pull-jira-context` as `task_type_label`. Treat it as a strong
+         prior — override only with explicit reasoning that names a misfit,
+         and surface the disagreement in your `reasoning` so the confirm
+         gate displays it.
+
+      4. If no workflow fits the ticket cleanly, output `workflow_name` as
+         `"no-fit"` and explain. The confirm gate will surface this. Per
+         the on-rails principle, the correct response to no-fit is to add
+         a new workflow via PR — not to freestyle the change.
+
+      5. If `workflow_name` is shipped=`no` (anything except
+         `sf-apex-change` as of Phase 4), the invoke step will refuse to
+         run it. The classifier still picks honestly; the system surfaces
+         the gap.
+    depends_on: [pull-jira-context]
+    when: "$parse-args.output.override_workflow == ''"
+    model: haiku
+    allowed_tools: []
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        workflow_name:
+          type: string
+          enum:
+            - sf-apex-change
+            - sf-metadata-change
+            - sf-flow-change
+            - sf-lwc-change
+            - sf-integration-change
+            - sf-permission-change
+            - sf-data-correction
+            - no-fit
+        scope:
+          type: string
+          enum: [small, medium, large]
+        reasoning:
+          type: string
+      required: [workflow_name, scope, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: CONFIRM (mandatory gate per ADR-0001)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: confirm
+    prompt: |
+      You are the dispatcher's confirmation gate. Per ADR-0001, the
+      classifier's choice MUST be confirmed by the engineer before any
+      irreversible action.
+
+      ## What to display
+
+      Present the following to the engineer:
+
+      ```
+      ───────────────────────────────────────────────
+      Ticket:      $parse-args.output.ticket
+      Title:       $pull-jira-context.output.title
+      Status:      $pull-jira-context.output.current_status
+
+      Workflow:    <see logic below>
+      Scope:       <classifier scope, or "—" if override>
+      Reason:      <classifier reasoning, or "explicit --workflow flag" if override>
+
+      What it will do:
+        • Pull Jira context, classify sub-type, smoke-validate claims
+        • Verify SF org connectivity and load engagement context
+        • Plan the change
+        • Run a confirm gate IF the change is destructive/large/risky
+        • Execute, validate (deploy to scratch + tests + FLS/CRUD)
+        • Update engagement docs, post structured Jira comment
+        • Transition ticket from in_progress → in_review
+      ───────────────────────────────────────────────
+
+        Confirm? [y/N]   (or "override <workflow-name>" to redirect)
+      ```
+
+      ## Workflow choice resolution
+
+      Resolve the workflow_name that the gate displays:
+      - If `$parse-args.output.override_workflow` is non-empty, use it.
+        Set `reasoning` to `"explicit --workflow flag (no classification)"`.
+      - Else use `$classify-task-family.output.workflow_name` and its
+        `reasoning`.
+
+      ## Engineer response handling
+
+      Accept (case-insensitive):
+        - `y` / `yes`                        → proceed
+        - `n` / `no` / empty (default)       → abort cleanly
+        - `override <workflow-name>`         → proceed with the named
+                                              workflow (must be one of
+                                              the enum from classify)
+
+      Refuse to proceed with `y` if the resolved workflow_name is `"no-fit"`.
+      Require either `override <name>` or `n`.
+
+      ## Output
+
+      Emit the engineer's decision as structured JSON:
+      - `proceed`: `"true"` if proceeding (with default or override), else `"false"`
+      - `chosen_workflow`: the workflow_name that will actually be invoked
+      - `reasoning`: a brief audit trail of how this was decided
+    depends_on: [parse-args, pull-jira-context, classify-task-family]
+    trigger_rule: none_failed_min_one_success
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        chosen_workflow:
+          type: string
+        reasoning:
+          type: string
+      required: [proceed, chosen_workflow, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: INVOKE the chosen task-family workflow
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: invoke-workflow
+    # Substituting `$confirm.output` (a JSON object) into bash via `echo "..." | jq`
+    # breaks shell quoting whenever the JSON contains inner double quotes, parens,
+    # or other shell metacharacters (e.g., from the user's description: `greet(String)`).
+    # Use Archon's nested-field substitution (`$<node>.output.<field>`) which yields a
+    # bare string value already safely quoted by Archon, and extract the ticket from
+    # `$ARGUMENTS` directly (which bash handles correctly under double quotes).
+    bash: |
+      set -euo pipefail
+
+      WORKFLOW="$confirm.output.chosen_workflow"
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      DESCRIPTION="$ARGUMENTS"
+
+      WORKFLOW_FILE=".archon/workflows/${WORKFLOW}.yaml"
+      if [ ! -f "$WORKFLOW_FILE" ]; then
+        echo "error: workflow '${WORKFLOW}' is not implemented yet in this engagement." >&2
+        echo "  Available task-family workflows here:" >&2
+        ls .archon/workflows/sf-*.yaml 2>/dev/null | sed 's|^|    - |' >&2 || echo "    (none)" >&2
+        echo "  Per ADR-0003, additional task families ship over Phase 7+." >&2
+        echo "  If your change genuinely needs one of the un-shipped workflows," >&2
+        echo "  open a PR against CreativLLC/archon-salesforce-jira proposing it." >&2
+        exit 1
+      fi
+
+      echo "→ Invoking ${WORKFLOW} for ticket ${TICKET}"
+      archon workflow run "${WORKFLOW}" "${DESCRIPTION}"
+    depends_on: [confirm]
+    when: "$confirm.output.proceed == 'true'"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: LOG dispatcher run (always — proceed or abort)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-dispatcher-run
+    # Same JSON-in-bash issue as invoke-workflow; use Archon nested-field substitution.
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      DECISION="$confirm.output.proceed"
+      WORKFLOW="$confirm.output.chosen_workflow"
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  %s  sf-dispatcher  workflow=%s  decision=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${WORKFLOW}" "${DECISION}" \
+        >> "$RUN_LOG"
+    depends_on: [invoke-workflow, confirm]
+    trigger_rule: none_failed_min_one_success

@@ -1,0 +1,116 @@
+# mkdocs.yml — MkDocs Material configuration for engagement documentation.
+# Per ADR-0010: renders docs/*.md as a polished doc site for humans
+# (admins, stakeholders, occasionally clients). Same .md files are also
+# loaded directly by AI agents via docs/index.md → INDEX nav.
+#
+# Bootstrapped into every engagement by harness-init.sh. Edit per-engagement
+# only for client name and the GitHub Pages URL.
+
+site_name: Meditrina — Engagement Documentation
+site_description: Holistic, state-of-the-org docs for the Meditrina engagement. Updated automatically as `/sf` workflows run.
+site_url: https://CreativLLC.github.io/pdf-org/
+
+# Source / destination
+docs_dir: docs
+site_dir: site
+
+# Repo link (top-right of every page)
+repo_name: CreativLLC/pdf-org
+repo_url: https://github.com/CreativLLC/pdf-org
+edit_uri: edit/main/docs/
+
+# What to NOT publish (per ADR-0010 §5 "What stays inside")
+exclude_docs: |
+  _internal/
+  .harness-templates/
+
+# Theme
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant         # SPA-like nav, fast page transitions
+    - navigation.tracking         # URL updates as you scroll through sections
+    - navigation.sections         # group nav items into sections
+    - navigation.indexes          # section index pages (sectionname/index.md)
+    - navigation.top              # back-to-top button
+    - navigation.footer           # prev/next page links at bottom
+    - search.suggest              # autocomplete in search box
+    - search.highlight            # highlight search hits on the page
+    - search.share                # shareable search URLs
+    - content.code.copy           # copy-button on every code block
+    - content.tabs.link           # linkable tabbed content
+    - content.action.edit         # 'edit this page' link
+    - toc.follow                  # right-sidebar TOC tracks current section
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+      # Lunr search; tokenizes camelCase-style names so 'RenewalCalc' finds 'RenewalCalculator'
+
+# Markdown extensions
+markdown_extensions:
+  - admonition                    # note/warning/tip callouts
+  - pymdownx.details              # collapsible sections
+  - pymdownx.superfences:         # nested code blocks, mermaid
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:              # tabbed content blocks
+      alternate_style: true
+  - pymdownx.highlight:           # syntax highlighting
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite         # inline syntax-highlighted code
+  - pymdownx.snippets             # include external files
+  - tables                        # standard markdown tables
+  - attr_list                     # add HTML attrs to elements
+  - md_in_html                    # render markdown inside HTML blocks
+  - toc:
+      permalink: '¶'
+      toc_depth: 3
+
+# Navigation structure (per ADR-0010 taxonomy)
+nav:
+  - Home: index.md
+  - Engagement README: README.md
+  - Conventions: CONVENTIONS.md
+  - Architecture:
+      - Overview: architecture/overview.md
+  - Objects:                       # canonical reference layer
+      - Index: objects/README.md
+      # Individual object docs appended by /sf runs that touch them.
+  - Features:                      # derived business-facing layer
+      - Index: features/README.md
+      # Individual feature docs appended by /sf runs.
+  - Flows:
+      - Index: flows/README.md
+  - Integrations:
+      - Index: integrations/README.md
+  - Decisions:
+      - Index: decisions/README.md
+      # ADRs appended as they're authored.
+
+# Strict mode — fail the build if any nav entry references a missing file,
+# or if there are dead internal links. Keeps the published site honest.
+strict: true

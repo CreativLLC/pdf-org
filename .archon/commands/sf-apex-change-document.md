@@ -85,7 +85,34 @@ Concretely:
 
 10. **Refuse to land empty required sections.** Object doc must have non-empty Overview, Schema, and Apex automation. Feature doc must have non-empty Overview, How it works, and Acceptance signals. Integration doc must have non-empty Purpose and API surface. If any required section comes out empty, fail this node and surface what's missing.
 
-11. **Stage the doc changes.** Run `git status --porcelain` to confirm everything is in the working tree under `docs/`. Do NOT commit — the engineer commits the whole change (Apex + docs) as one commit after the Jira write-back step succeeds.
+11. **State-vs-history scan (refuse-on-detection).** Before staging, scan every doc you wrote or edited for change-history language that violates ADR-0010. Grep each updated `.md` file for these forbidden patterns (case-insensitive):
+
+    - `introduced with this` / `introduced in this` (e.g. "introduced with this handler")
+    - `recently added` / `newly added`
+    - `as of GRIM-` / `as of <any ticket key>` / `as of 20[0-9][0-9]-`
+    - `previously` / `formerly` / `used to be` / `used to fire`
+    - `now fires` / `now does` / `now uses` (when contrasting with a prior state)
+    - `was added` / `was changed` / `was removed`
+    - References to `../changelog/` or `docs/changelog/` in body OR frontmatter `related_docs:`
+    - Body sentences naming the current Jira ticket (e.g., "GRIM-49 introduced...") — ticket attribution belongs in frontmatter `related_tickets:`, not in prose.
+
+    If any pattern matches: **fail this node with a structured error** listing the file, line number, matched phrase, and a suggested rewrite to bare state. Example: matched `"introduced with this handler"` at `docs/objects/Opportunity.md:60` → rewrite to delete the qualifying clause; just describe what the handler does.
+
+    The engineer addresses each match and re-runs. Do NOT proceed to step 12 (link validation) with any slip un-resolved. This check is the difference between ADR-0010 being a rule and being enforced.
+
+12. **Link-resolution scan.** Run the link validator against the docs tree:
+
+    ```bash
+    bash .archon/scripts/validate-doc-links.sh docs/
+    ```
+
+    The validator walks every `.md` file in `docs/`, extracts `related_docs:` frontmatter entries and body markdown links, and verifies each relative target exists. Skips absolute URLs, anchor-only links, `docs/_internal/`, and fenced code blocks.
+
+    Exit code 0: continue to staging.
+
+    Exit code 1: **broken links found.** Fail this node, surface the validator's output (file:line: target), and let the engineer fix the references and re-run. Common causes after a `/sf` run: a `related_docs:` entry pointing at a doc that wasn't actually written this run, a body link that uses the wrong relative path, or a leftover changelog reference (impossible after step 11 but defense-in-depth).
+
+13. **Stage the doc changes.** Run `git status --porcelain` to confirm everything is in the working tree under `docs/`. Do NOT commit — the engineer commits the whole change (Apex + docs) as one commit after the Jira write-back step succeeds.
 
 ## Output
 

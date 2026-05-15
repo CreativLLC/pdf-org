@@ -100,9 +100,19 @@ Anything that's surprising, nontrivial, or easy to get wrong. Examples:
 - "The `OwnerId` is reassigned by `<Flow_Name>` on certain transitions; manual ownership changes will be overwritten."
 - "Bulk DML must be batched at <N> records to stay within governor limits given the trigger's downstream lookups."
 
-## History
+## Related decisions
 
-Significant changes to this object, by Jira ticket. The full granular history is in `changelog/`; this section records the highlights.
+ADRs in `docs/decisions/` that govern how this object is shaped or used. Frontmatter `related_tickets:` is the per-ticket attribution; `git log <this file>` is the granular change history. This section captures the *architectural choices* that explain the current state.
 
-- **`<JIRA-KEY>`** (<date>): <what>.
-- **`<JIRA-KEY>`** (<date>): <what>.
+- [`<NNNN-slug>`](../decisions/<NNNN-slug>.md) — <one-line summary of what the ADR locked about this object>
+
+If no engagement ADRs touch this object, write `_None._` — do not omit the section.
+
+<!--
+Replaces the older `## History` section. Per ADR-0010 state-not-history: the
+doc body describes the current state. Per-ticket change history lives in Jira
+and `git log`; engagement-wide architectural choices live in ADRs. This
+section is the bridge from "what the object is today" to "why we made it
+that way."
+-->
+

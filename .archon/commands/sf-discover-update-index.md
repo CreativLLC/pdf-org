@@ -44,7 +44,16 @@ Read, Edit, Write, Glob, Grep. Writes only `docs/index.md`.
 
    - **How this index stays current** — verbatim from the template; explains that `/sf` runs maintain this index per ADR-0010.
 
-3. **Verify cross-link integrity.** After writing, for each `(./<path>)` link in the index, check that the target exists. If any are broken, log them in the output's `broken_links` array — the engineer reviews and fixes manually before committing.
+3. **Verify cross-link integrity via the link validator.** After writing the index, run:
+
+    ```bash
+    bash .archon/scripts/validate-doc-links.sh docs/ --json
+    ```
+
+    The validator walks every `.md` under `docs/` (skipping `_internal/`, `.harness-templates/`, fenced code blocks, absolute URLs, and anchor-only links) and verifies every `related_docs:` frontmatter entry and `[text](target)` body link resolves to an existing file.
+
+    - Exit code 0: all links resolve. Populate the output's `broken_links` array as `[]`.
+    - Exit code 1: parse the validator's JSON output and copy its `broken` array into `broken_links`. Do NOT fail the node — the index is still useful; the engineer reviews and fixes the references manually before committing. The whole point of running this at end-of-discovery is to surface drift, not to abort.
 
 4. **Verify no duplicate entries.** Each object / feature / flow / integration appears in exactly one table.
 

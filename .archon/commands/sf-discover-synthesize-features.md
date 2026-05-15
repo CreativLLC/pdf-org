@@ -28,21 +28,27 @@ Per other discover-* nodes — check existing `docs/features/<slug>.md` frontmat
    - Trace integrations to the objects they affect → those go in the same feature as the objects.
    - A feature should be **business-recognizable** — name it as a PM would name it ("Renewal pipeline", "Document generation", "Account onboarding"), not as a developer would ("Renewal__c CRUD", "Trigger handler refactor").
 
-2. **For each feature**, write `docs/features/<slug>.md`. The slug is `kebab-case` and short (1–3 words). Per the template:
+2. **For each feature**, write `docs/features/<slug>.md`. The slug is `kebab-case` and short (1–3 words). The section names and order below match `docs/.harness-templates/feature-doc.md` exactly. **All sections are REQUIRED. Do not omit any. Do not invent alternate names. Do not reorder.**
 
-   - **Frontmatter:** title (display name), audience: public, last_updated, last_updated_by (`archon-discover-<run-id>`), related_tickets: [], related_docs: list of the canonical docs this feature draws from.
+   - **Frontmatter** (required keys): `title` (display name), `audience: public`, `last_updated` (today), `last_updated_by` (`archon-discover-<run-id>` if `$ARCHON_RUN_ID` set), `related_tickets: []`, `related_docs:` (relative paths to the canonical docs this feature draws from).
 
-   - **One-line summary** at the very top, in italics: what the feature does for an end user.
+   - **One-line summary** at the very top, in italics: `> **One-line summary** of what the feature does for an end user.`
 
-   - **Overview** — 2–4 sentences. What is the feature, who uses it, when.
+   - **`## Overview`** — REQUIRED. 2–4 sentences. What is this feature, who uses it (admin, end user, integration), when.
 
-   - **How it works** — numbered list of steps in execution order, business-readable. Use phrases like "When a user closes-won an Opportunity, the system creates a Renewal record..." Not "RenewalTriggerHandler.afterInsert() fires and calls RenewalCalculator.create()..." That's in the object doc; link to it.
+   - **`## How it works`** — REQUIRED. Numbered list of steps in execution order, **business-readable**. Use phrases like "When a user closes-won an Opportunity, the system creates a Renewal record..." NOT "RenewalTriggerHandler.afterInsert() fires and calls RenewalCalculator.create()..." Apex class names, field API names, and method signatures belong in the linked object doc, not here. Cross-reference the canonical docs at the bottom of the section.
 
-   - **Acceptance signals** — how a non-engineer knows the feature is working (visible record state, emails sent, downstream actions enabled).
+   - **`## Acceptance signals`** — REQUIRED. How does a user know the feature is working correctly? Visible record state, emails/notifications sent, downstream actions enabled. If the feature has no user-visible acceptance signal (rare — usually data-only features), write `_This feature has no end-user-visible acceptance signal; verification is via record-level inspection by an admin._` — do NOT omit.
 
-   - **Known limitations** — honest list of edge cases not handled, or known imperfections.
+   - **`## Known limitations`** — REQUIRED. Honest list of edge cases the feature does NOT handle (or handles imperfectly), framed from the user's perspective. If you find yourself writing engineering smells (duplicate trigger files, unused DTOs, Apex test placement) — those belong in the object doc's `Constraints and gotchas`, not here. If no user-facing limitations exist, write `_None known._` — do NOT omit.
 
-   - **Governing decisions** — links to relevant ADRs.
+   - **`## Governing decisions`** — REQUIRED. Links to ADRs in `docs/decisions/` that constrain how this feature works. Format per canon: `- [`<NNNN-slug>`](../decisions/<NNNN-slug>.md) — <one-line summary of what the ADR locked>`. **If no engagement ADRs govern this feature yet, write `_None yet._`** — do NOT omit. This section is the gateway from features to architectural decisions; future workflows verify it exists.
+
+   - **`## Related tickets`** — REQUIRED (matches canon template). The authoritative list is in frontmatter `related_tickets`. This section is for human-readable summary if useful. If frontmatter `related_tickets` is empty, write `_None — see frontmatter._`
+
+### Section-name + completeness enforcement
+
+Before writing each feature file, verify your draft has every REQUIRED section header spelled exactly as listed above, in the listed order. If `## Governing decisions` is missing from your draft, STOP and add it before writing. The same applies to every section above marked REQUIRED. Empty content within a section is OK (use the documented `_None._` / `_None yet._` placeholders); omitting the section entirely is NOT.
 
 3. **DO NOT duplicate technical detail.** If you find yourself describing Apex method signatures, SOQL queries, or trigger event-order specifics — STOP and link to the object/flow doc instead. The feature doc summarizes; the canonical doc has the depth.
 

@@ -38,26 +38,37 @@ For each external system in the inventory:
 
 1. **Group all Salesforce-side artifacts** that touch this system: Connected App, Named Credential, Apex callout classes, REST endpoints, Platform Event definitions, related Flows.
 
-2. **Write `docs/integrations/<SystemName>.md`** following the template:
+2. **Write `docs/integrations/<SystemName>.md`** following the canonical template at `docs/.harness-templates/integration-doc.md`. The section names and order below match the canon exactly. **All sections are REQUIRED. Do not invent alternate names. Do not omit. Do not reorder.**
 
-   - **Frontmatter:** title, audience: public, last_updated, last_updated_by (`archon-discover-<run-id>`), related_tickets: [], related_docs: link to object docs for objects this integration reads/writes.
+   - **Frontmatter** (required keys): `title`, `audience: public`, `last_updated` (today), `last_updated_by` (`archon-discover-<run-id>` if `$ARCHON_RUN_ID` set; else `archon-discover`), `related_tickets: []`, `related_docs:` (relative paths to object docs for objects this integration reads/writes; `architecture/integration-topology.md` if it exists).
 
-   - **Overview** — 2–4 sentences: what external system this connects to, what business purpose (billing, e-signature, identity, etc.), direction(s) (outbound / inbound / bidirectional).
+   - **`## Purpose`** — REQUIRED. One paragraph: what this integration accomplishes for the business AND at what cost (latency, complexity, dependency). Be honest about both. (Not "Overview" — `## Purpose` matches canon.)
 
-   - **Auth** — Named Credential name + auth scheme (OAuth 2.0, JWT, Basic, API Key), or Connected App configuration. Reference the credential storage convention (env vars per ADR-0008; never literal values in this doc).
+   - **`## Direction(s) and pattern`** — REQUIRED. Table per canon: `Direction` (Outbound SF → System / Inbound System → SF), `Pattern` (REST callout / Platform Event / Outbound Message / Bulk API), `Trigger` (when each direction fires). If one-directional, write the unused row as `| — | — | — |` and add a one-line note. (Was "API surface" — `## Direction(s) and pattern` matches canon.)
 
-   - **API surface** — table of operations the org performs against this system:
-     | Direction | Endpoint / event | Apex class | Triggered by | Notes |
+   - **`## Authentication`** — REQUIRED. Auth method, credential storage (Named Credential / Custom Metadata / External Credential — name the artifact, never the value), rotation cadence if known, scope/permissions. **Reference the credential storage convention (env vars per ADR-0008; never literal values in this doc.)** (Was "Auth" — `## Authentication` matches canon.)
 
-   - **Apex layer** — the classes that implement the integration. Brief description of each, including what business logic it adds on top of the raw API call.
+   - **`## Endpoints / channels`** — REQUIRED. Table per canon: `Endpoint`, `Method`, `Purpose`, `Frequency`. If purely inbound and no outbound endpoints, write one row describing the inbound endpoint and note "no outbound calls."
 
-   - **Salesforce objects affected** — table:
-     | Object | Direction | Notes |
-     For each row, link to the object's doc.
+   - **`## Payloads`** — REQUIRED. For each notable endpoint: request shape (JSON), SF-source mapping table (`Payload key | SF source | Transformation`), successful response shape, error response shapes. If you can't read payload contracts from metadata alone, write `_Payload contract not in source metadata; populate from API documentation or by reading the Apex callout class body._` — do NOT omit the section.
 
-   - **Failure modes** — known classes of failure (rate limits, schema mismatches, auth expiry) and how the integration handles them (retries, dead-letter, surfacing-to-user).
+   - **`## Error handling and retries`** — REQUIRED. Transient errors, permanent errors, auth errors, idempotency. (Was "Failure modes" — `## Error handling and retries` matches canon.)
 
-   - **Governing decisions** — `docs/decisions/*.md` ADRs that govern this integration. Skip if none.
+   - **`## Bulk and rate limits`** — REQUIRED. System rate limit (if known from docs), SF callout limits, bulk-operation strategy. If unknown, write `_Rate limits not documented in source; consult <System> API docs._`
+
+   - **`## Monitoring`** — REQUIRED. Logs, dashboards, alerts. If not yet wired, write `_No monitoring configured; first failure will surface as a customer-facing error._`
+
+   - **`## SF-side surface area`** — REQUIRED. Bullets: Apex classes (with one-line role each), Named Credentials, Custom Metadata Types, Custom Settings, Platform Events, Apex REST endpoints. (Was "Apex layer" — broader scope, `## SF-side surface area` matches canon.)
+
+   - **`## <System>-side surface area`** — REQUIRED. What lives on the external side: webhooks, API client app, mappings or configurations maintained externally. If unknown from metadata, write `_External-side artifacts not visible from SF source; populate from <System> admin console review._`
+
+   - **`## Failure modes and runbook`** — REQUIRED. Table per canon: `Symptom`, `Likely cause`, `First check`, `Runbook`. If no runbooks exist yet, write one row describing each known failure mode with an empty `Runbook` cell — do NOT omit.
+
+   - **`## Related decisions`** — REQUIRED. `docs/decisions/*.md` ADRs that govern this integration. If none, write `_None._` — do NOT omit. (Replaces canon template's old `## History` section.)
+
+### Section-name enforcement check
+
+Before writing the file, verify your draft has each REQUIRED section header spelled exactly as listed above. If you find yourself wanting to use `## Overview`, `## Auth`, `## API surface`, `## Apex layer`, or `## Failure modes` (without "and runbook") — STOP. Those are not the canon section names. Rename before writing.
 
 3. **Cross-link aggressively.** Object docs (relative paths). Other integration docs if relevant (cross-vendor flows). Note the cross-links even if target docs don't exist yet.
 

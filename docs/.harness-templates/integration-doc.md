@@ -99,7 +99,6 @@ How we know this integration is healthy.
 - **Logs:** `<log object>` — fields, retention, search patterns.
 - **Dashboards:** `<dashboard name or URL>`.
 - **Alerts:** `<who gets paged on what condition>`.
-- **Recent incidents:** *(optional)* with Jira links.
 
 ## SF-side surface area
 
@@ -129,9 +128,10 @@ How to diagnose when this integration is broken.
 | Records not flowing into `<System>` | Auth expired / endpoint changed | `<log query>` | <link to runbook> |
 | Inbound webhooks failing | SF endpoint down / payload schema drift | `<log query>` | <link to runbook> |
 
-## History
+## Related decisions
 
-Significant changes to this integration, by Jira ticket.
+ADRs in `docs/decisions/` that govern how this integration is shaped. Per-ticket change history lives in Jira + `git log <this file>`; this section captures the architectural choices.
 
-- **`<JIRA-KEY>`** (<date>): <what>.
-- **`<JIRA-KEY>`** (<date>): <what>.
+- [`<NNNN-slug>`](../decisions/<NNNN-slug>.md) — <one-line summary of what the ADR locked about this integration>
+
+If no engagement ADRs touch this integration, write `_None._` — do not omit the section.

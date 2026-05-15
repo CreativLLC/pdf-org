@@ -497,20 +497,149 @@ fi
 
 section "Scaffolding docs/"
 
-# Use the example engagement's docs structure as a skeleton
-EXAMPLE_DOCS="$HARNESS_DIR/examples/engagement/docs"
-if [ -d "$EXAMPLE_DOCS" ]; then
-  # Per ADR-0010, `changelog/` is deprecated for new engagements; do not
-  # scaffold it. The directory exists in the exemplar for historical context.
-  for d in architecture decisions objects flows integrations features patterns standards _internal; do
-    mkdir -p "$ENGAGEMENT_DIR/docs/$d"
-    if [ -f "$EXAMPLE_DOCS/$d/README.md" ]; then
-      cp "$EXAMPLE_DOCS/$d/README.md" "$ENGAGEMENT_DIR/docs/$d/README.md"
-    fi
-  done
-  if [ -f "$EXAMPLE_DOCS/CONVENTIONS.md" ]; then
-    cp "$EXAMPLE_DOCS/CONVENTIONS.md" "$ENGAGEMENT_DIR/docs/CONVENTIONS.md"
-  fi
+# Generate minimal engagement-shaped category READMEs. Per ADR-0010 + ADR-0012:
+# do NOT copy the Acme exemplar READMEs — they contain references to
+# Renewal__c / Stripe / fictional ADRs that survive into real engagements
+# and mislead clients reading the rendered docs site. The exemplar
+# directory remains as a reference for harness authors (under
+# examples/engagement/docs/), but is not the source of engagement docs.
+
+TODAY=$(date -u +%Y-%m-%d)
+HARNESS_CANON_URL="https://github.com/CreativLLC/archon-salesforce-jira/tree/main/docs-templates"
+
+write_category_readme() {
+  local subdir="$1" title="$2" blurb="$3" template_file="$4"
+  mkdir -p "$ENGAGEMENT_DIR/docs/$subdir"
+  cat > "$ENGAGEMENT_DIR/docs/$subdir/README.md" <<README_EOF
+---
+title: $title
+audience: public
+last_updated: $TODAY
+last_updated_by: harness-init
+related_tickets: []
+related_docs: [../index.md]
+---
+
+# $title — $CLIENT_NAME
+
+$blurb
+
+## Index
+
+*Empty until \`/sf-discover\` or \`/sf\` runs populate this section.*
+
+---
+
+Doc template: [\`$template_file\`](../.harness-templates/$template_file). Authoring guidance: [harness docs-templates]($HARNESS_CANON_URL).
+README_EOF
+}
+
+write_category_readme "objects" "Objects" \
+  "The canonical reference layer for Salesforce objects in this engagement. One file per significant standard-with-customizations or custom object. Standard objects with no engagement-specific customizations are not documented here — Salesforce documents those." \
+  "object-doc.md"
+
+write_category_readme "features" "Features" \
+  "The derived business-facing layer per [ADR-0010](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/decisions/0010-engagement-documentation-model.md). One file per coherent end-to-end business capability that spans multiple objects, flows, or integrations. Reads like product documentation; links to canonical object/flow/integration docs for technical detail." \
+  "feature-doc.md"
+
+write_category_readme "flows" "Flows" \
+  "Salesforce Flows (record-triggered, scheduled, screen, autolaunched) configured in this engagement. One file per significant Flow." \
+  "flow-doc.md"
+
+write_category_readme "integrations" "Integrations" \
+  "External systems this engagement's Salesforce org reads from, writes to, or both. One file per integration boundary, regardless of transport (REST, platform events, SOAP, callouts, webhooks, named credentials)." \
+  "integration-doc.md"
+
+write_category_readme "decisions" "Architectural decisions" \
+  "Engagement-specific ADRs in [MADR](https://adr.github.io/madr/) format. Records the architectural choices made for this client's Salesforce work. Distinct from the harness's own ADRs (which govern the harness platform, not this engagement)." \
+  "adr.md"
+
+# architecture/ — no category-doc template; carves out for engagement-specific
+# system overview files. Bootstrap writes only the README.
+mkdir -p "$ENGAGEMENT_DIR/docs/architecture"
+cat > "$ENGAGEMENT_DIR/docs/architecture/README.md" <<README_EOF
+---
+title: Architecture
+audience: public
+last_updated: $TODAY
+last_updated_by: harness-init
+related_tickets: []
+related_docs: [../index.md]
+---
+
+# Architecture — $CLIENT_NAME
+
+The 'why' of $CLIENT_NAME's Salesforce org: system overview, subsystem boundaries, sharing model, integration topology, and any cross-cutting design notes.
+
+## Index
+
+*Empty until populated. Suggested first additions:*
+
+- \`overview.md\` — high-level system map (mermaid diagrams of object subsystems)
+- \`sharing-model.md\` — OWD + sharing rules + Apex sharing posture
+- \`integration-topology.md\` — system context diagram if integrations are non-trivial
+
+Architecture docs are authored by engineers, not auto-generated. There's no template; pattern after [ADR-0010](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/decisions/0010-engagement-documentation-model.md) and other docs in the harness exemplar.
+README_EOF
+
+# patterns/ and standards/ — engagement-specific overrides only (rare). Per
+# the harness install model, team canon lives in the harness; per-engagement
+# overrides go here.
+for cat in patterns standards; do
+  mkdir -p "$ENGAGEMENT_DIR/docs/$cat"
+  cat > "$ENGAGEMENT_DIR/docs/$cat/README.md" <<README_EOF
+---
+title: $(echo "$cat" | sed 's/.*/\u&/')
+audience: public
+last_updated: $TODAY
+last_updated_by: harness-init
+related_tickets: []
+related_docs: [../index.md]
+---
+
+# Engagement-specific $cat — $CLIENT_NAME
+
+Engagement-specific $cat that diverge from or extend the team canon at [harness/$cat/](https://github.com/CreativLLC/archon-salesforce-jira/tree/main/$cat). Most engagements have zero or near-zero entries here — defaulting to harness canon is the norm.
+
+## Index
+
+*Empty.*
+README_EOF
+done
+
+# _internal/ — gitignored from client distribution; for engineer notes
+mkdir -p "$ENGAGEMENT_DIR/docs/_internal"
+cat > "$ENGAGEMENT_DIR/docs/_internal/README.md" <<README_EOF
+# Internal-only notes
+
+Gitignored from client distribution per [ADR-0010](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/decisions/0010-engagement-documentation-model.md). Engineer war stories, half-finished hypotheses, risk logs, candid post-mortems live here. Never in the main \`docs/\` tree where the client may read them.
+README_EOF
+
+# CONVENTIONS.md — minimal engagement-side pointer. The full canon lives in
+# the harness; this file is for engagement-specific overrides only.
+cat > "$ENGAGEMENT_DIR/docs/CONVENTIONS.md" <<CONV_EOF
+---
+title: Engagement Documentation Conventions
+audience: public
+last_updated: $TODAY
+last_updated_by: harness-init
+related_tickets: []
+related_docs: [README.md, index.md]
+---
+
+# Documentation conventions — $CLIENT_NAME
+
+Authoritative doc conventions for this engagement live in the harness:
+[harness/examples/engagement/docs/CONVENTIONS.md](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/examples/engagement/docs/CONVENTIONS.md).
+
+This file is reserved for **engagement-specific overrides** — rare. Examples of what would land here: a different naming convention required by $CLIENT_NAME's existing repo, a client-mandated audience filter, a stricter PII redaction rule.
+
+## Overrides
+
+*None.*
+CONV_EOF
+
+if [ -d "$HARNESS_DIR/examples/engagement/docs" ]; then
 
   # docs/README.md — human entry point (engagement summary)
   cat > "$ENGAGEMENT_DIR/docs/README.md" <<EOF

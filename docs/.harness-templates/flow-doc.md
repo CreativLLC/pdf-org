@@ -95,11 +95,11 @@ Who is responsible for this Flow when it breaks.
 
 - **Subject-matter owner:** `<role-or-team>`.
 - **Operational owner:** `<role-or-team>` *(may be the same)*.
-- **Recent failures:** *(optional)* incidents and ticket links.
 
-## History
+## Related decisions
 
-Significant changes to this Flow, by Jira ticket.
+ADRs in `docs/decisions/` that govern how this Flow is shaped. Per-ticket change history lives in Jira + `git log <this file>`; this section captures the architectural choices that explain the current state.
 
-- **`<JIRA-KEY>`** (<date>): <what>.
-- **`<JIRA-KEY>`** (<date>): <what>.
+- [`<NNNN-slug>`](../decisions/<NNNN-slug>.md) — <one-line summary of what the ADR locked about this Flow>
+
+If no engagement ADRs touch this Flow, write `_None._` — do not omit the section.

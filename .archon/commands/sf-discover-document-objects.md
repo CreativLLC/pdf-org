@@ -42,27 +42,39 @@ For each object in the input list:
 
 3. **Read the Flows.** For each `flows_referencing` entry: open `force-app/main/default/flows/<Flow>.flow-meta.xml`. Identify the trigger type and what the Flow does to this object.
 
-4. **Write `docs/objects/<Object>.md`** following the template's section structure:
+4. **Write `docs/objects/<Object>.md`** following the canonical template at `docs/.harness-templates/object-doc.md`. The section names and order below are **non-negotiable** — they match the canon template exactly and other workflows (link validation, future drift checks, AI-agent retrieval) depend on them. **Do not invent alternate section names. Do not omit required sections. Do not reorder.**
 
-   - **Frontmatter:** title, audience: public, last_updated (today), last_updated_by (`archon-discover-<run-id>` if `$ARCHON_RUN_ID` set; else `archon-discover`), related_tickets: [], related_docs: list the flow/integration docs you cross-reference.
+   - **Frontmatter** (required keys, in this order): `title`, `audience: public`, `last_updated` (today, YYYY-MM-DD), `last_updated_by` (`archon-discover-<run-id>` if `$ARCHON_RUN_ID` set; else `archon-discover`), `related_tickets: []`, `related_docs:` (list the flow/integration/feature/decision docs you cross-reference; relative paths from `docs/objects/`).
 
-   - **Overview** — 2–4 sentences explaining what the object represents in the business domain and its primary purpose. Pull from the object's label and field semantics. Do NOT just restate the API name.
+   - **`## Purpose`** — REQUIRED. 2–4 sentences explaining what the object represents in the business domain and its primary purpose. Pull from the object's label and field semantics. Do NOT just restate the API name. (Not "Overview" — `## Purpose` matches canon.)
 
-   - **Schema** — table of significant fields. Columns: API name, label, type, required/optional, description (from field-meta.xml `<description>` or `<inlineHelpText>` if present; otherwise inferred from name + type). Group standard fields separately at the bottom if relevant; focus the top of the table on custom fields.
+   - **`## Type and origin`** — REQUIRED. Two-column key-value table per canon template: API name, Type (Standard / Custom (`__c`) / Custom Metadata (`__mdt`) / External / Big Object / Platform Event (`__e`)), Label (singular / plural), Origin (Out-of-box / Created in `<JIRA-KEY>` / Inherited from `<package>`).
 
-   - **Sharing model** — pulled from `<sharingModel>` in the object-meta. Note any sharing rules in `force-app/main/default/sharingRules/<Object>SharingRules.sharingRules-meta.xml` if present.
+   - **`## Key fields`** — REQUIRED. Table of significant fields. Columns per canon: `Field API name`, `Type`, `Required`, `FLS posture`, `Purpose`. Cover fields material to understanding or working with the object — not every field. (Not "Schema" — `## Key fields` matches canon.)
 
-   - **Validation rules** — table of active validation rules. Columns: rule name, condition (errorConditionFormula), error message. Mark inactive ones briefly if relevant.
+   - **`## Relationships`** — REQUIRED. Table per canon: `Relationship` (Parent/Child), `Field`, `Related object`, `Type` (Lookup/Master-Detail), `Cascade behavior` (Restrict/Cascade/Set Null). If the object has no relationships, write the table header followed by a single row `| — | — | — | — | — |` and a one-line note "_No parent or child relationships._" — do NOT omit the section.
 
-   - **Apex automation** — describe the triggers and handler classes that operate on this object. For each trigger: what events, what handler class, what the handler does. Reference the handler class file path for engineers to read.
+   - **`## Sharing model`** — REQUIRED. Pulled from `<sharingModel>` in the object-meta. Cover OWD, sharing rules, Apex sharing, implicit sharing if relevant.
 
-   - **Flows** — bullet list of active Flows that reference this object, with one-line summary each. Link to the flow doc when written: `[Flow_API_Name](../flows/Flow_API_Name.md)`.
+   - **`## Validation rules`** — REQUIRED. Table of active validation rules per canon. If none active, write a single row `| _None active_ | — | — | — |` — do NOT omit.
 
-   - **Integrations** — bullet list of external integrations that read or write this object. Link to integration docs: `[System](../integrations/System.md)`.
+   - **`## Triggers and Apex touching this object`** — REQUIRED. Code that mutates or reads this object beyond standard CRUD. For each trigger: what events, what handler class, what the handler does. (Not "Apex automation" — `## Triggers and Apex touching this object` matches canon.)
 
-   - **Record types** — if any, table with name + label + picklist filters.
+   - **`## Flows touching this object`** — REQUIRED. Bullet list of active Flows that reference this object, with one-line summary each. Link: `[Flow_API_Name](../flows/Flow_API_Name.md)`. If none, write `_None._`.
 
-   - **Related ADRs** — `docs/decisions/*.md` entries that govern this object. Skip if none.
+   - **`## Integrations referencing this object`** — REQUIRED. Bullet list of external integrations that read or write this object. Link: `[System](../integrations/System.md)`. If none, write `_None._`.
+
+   - **`## Test coverage`** — REQUIRED. Test data factory method, test classes covering this object's behavior. If no tests touch the object, write `_No test coverage._` — do NOT omit.
+
+   - **`## Constraints and gotchas`** — REQUIRED. Anything surprising, nontrivial, or easy to get wrong. Examples in canon template. If none, write `_None._`.
+
+   - **`## Related decisions`** — REQUIRED. `docs/decisions/*.md` entries that govern this object. If none, write `_None._` — do NOT omit. (Replaces canon template's `## History` section, which violated ADR-0010 state-not-history.)
+
+   - **`## Record types`** — OPTIONAL. Include only if the object has custom record types. Table with name + label + picklist filters.
+
+### Section-name enforcement check
+
+Before writing the file, verify your draft has each REQUIRED section header spelled exactly as listed above (matching case, spacing, punctuation). If you find yourself wanting to use `## Schema`, `## Overview`, `## Apex automation`, or `## Related ADRs` — STOP. Those are not the canon section names. Rename before writing.
 
 5. **Cross-link aggressively.** Use relative markdown links to other docs/objects/, docs/flows/, docs/integrations/ pages, even if those pages don't exist yet (the document-flows / document-integrations nodes will fill them in; cross-links resolve once their pass completes).
 

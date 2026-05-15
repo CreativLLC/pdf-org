@@ -35,29 +35,33 @@ For each Flow in the input list:
 
 2. **Read any invocable Apex.** For each `<actionCalls>` of type Apex, open the `force-app/main/default/classes/<Class>.cls` and identify the `@InvocableMethod` method's signature, what it does in 1–2 sentences.
 
-3. **Write `docs/flows/<Flow>.md`** following the template:
+3. **Write `docs/flows/<Flow>.md`** following the canonical template at `docs/.harness-templates/flow-doc.md`. The section names and order below match the canon exactly. **All sections are REQUIRED. Do not invent alternate names. Do not omit. Do not reorder.**
 
-   - **Frontmatter:** title, audience: public, last_updated, last_updated_by (`archon-discover-<run-id>`), related_tickets: [], related_docs: link to the primary object's doc + any integration docs the Flow's actions imply.
+   - **Frontmatter** (required keys): `title`, `audience: public`, `last_updated` (today), `last_updated_by` (`archon-discover-<run-id>` if `$ARCHON_RUN_ID` set; else `archon-discover`), `related_tickets: []`, `related_docs:` (relative paths to the primary object's doc + any integration docs).
 
-   - **Overview** — 2–3 sentences: what business outcome this Flow produces, when it fires, what entity it operates on.
+   - **`## Purpose`** — REQUIRED. One paragraph framing the business outcome first, then the system effect. (Not "Overview" — `## Purpose` matches canon.)
 
-   - **Trigger** — table:
-     - Type (RecordTriggered / Scheduled / Screen / etc.)
-     - Object (for record-triggered)
-     - When (RecordAfterSave / RecordBeforeSave for record-triggered; cron for scheduled; user-click for screen)
-     - Entry criteria — translate the `<filters>` into human-readable conditions
+   - **`## Type and trigger`** — REQUIRED. Two-column key-value table per canon: API name, Type (RecordTriggered / Scheduled / Screen / etc.), Triggering object (if applicable), Trigger condition (translated `<filters>` in human-readable form), Trigger order (Before-save / After-save for record-triggered), Run-as user, Active version. (Not "Trigger" — `## Type and trigger` matches canon.)
 
-   - **Behavior** — step-by-step what the Flow does. Numbered list mirroring the Flow's element graph in execution order. For each step name the element type (Decision, Update Records, Invocable Apex, etc.) and what it accomplishes in plain language.
+   - **`## What it does`** — REQUIRED. Numbered list mirroring the Flow's element graph in execution order. Plain language, naming each element type (Decision, Update Records, Invocable Apex, etc.). A reader should be able to verify whether the Flow's implementation matches this description. (Not "Behavior" — `## What it does` matches canon.)
 
-   - **Invokes** — Apex classes / sub-flows / email alerts / outbound messages this Flow calls. For each, brief description and link to the relevant doc (object doc for the class's host object; integration doc for callouts).
+   - **`## Side effects`** — REQUIRED. Bullets: records created, records updated, platform events published, outbound calls, emails/notifications sent. If no side effects beyond the triggering record, write `_No side effects beyond the triggering record._` — do NOT omit. (Was "DML performed" + part of "Invokes" — `## Side effects` matches canon.)
 
-   - **DML performed** — which objects this Flow writes to (creates, updates, deletes). Reference the object doc for each.
+   - **`## Error handling`** — REQUIRED. Fault paths, errors users see, errors that go silent (and why), retries. If no fault paths defined, write `_No fault paths defined; errors propagate to the user._` — do NOT omit. (Was "Failure handling" — `## Error handling` matches canon.)
 
-   - **Decision points** — the major `<decisions>` and what each branch does. Critical for understanding the Flow's logic.
+   - **`## Dependencies`** — REQUIRED. Custom Metadata records, Apex actions (`<ApexClass>.<methodName>`), other Flows (subflows), permissions. Link to relevant docs. If none, write `_No external dependencies._` (Was "Invokes" — `## Dependencies` matches canon.)
 
-   - **Failure handling** — fault paths if defined (`<faultConnector>`). If none, note that explicitly (means errors propagate to the user / break the flow).
+   - **`## Performance and limits`** — REQUIRED. Bulkification posture, DML count per record, SOQL count per execution, known governor risks. If trivial, write `_Single-record processing; no bulk or governor risk._`
 
-   - **Governing decisions** — `docs/decisions/*.md` ADRs that constrain this Flow. Skip if none.
+   - **`## Testing`** — REQUIRED. Apex test class (if any), manual test scenarios. If no automated coverage, write `_No automated test coverage._` — do NOT omit.
+
+   - **`## Ownership and on-call`** — REQUIRED. Subject-matter owner, operational owner. From metadata you can only infer authorship; fill with `_Unknown — populate at first incident or via engagement.yaml: owners._`
+
+   - **`## Related decisions`** — REQUIRED. `docs/decisions/*.md` ADRs that constrain this Flow. If none, write `_None._` — do NOT omit. (Replaces canon template's old `## History` section.)
+
+### Section-name enforcement check
+
+Before writing the file, verify your draft has each REQUIRED section header spelled exactly as listed above. If you find yourself wanting to use `## Overview`, `## Trigger`, `## Behavior`, `## DML performed`, `## Decision points`, `## Failure handling`, or `## Invokes` — STOP. Those are not the canon section names. Rename before writing.
 
 4. **Cross-link aggressively.** Object docs, integration docs, sub-flow docs. Use relative paths even if the target doesn't exist yet — the other category nodes will create them.
 

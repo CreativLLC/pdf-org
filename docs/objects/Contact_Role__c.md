@@ -62,7 +62,7 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`ContactRoleTrigger.trigger`](../../force-app/main/default/triggers/ContactRoleTrigger.trigger)** — events: `before insert/update/delete, after insert/update/delete, after undelete`. Delegates to **[`ContactRoleUtils`](../../force-app/main/default/classes/ContactRoleUtils.cls)**:
+- **`ContactRoleTrigger.trigger`** — events: `before insert/update/delete, after insert/update/delete, after undelete`. Delegates to **`ContactRoleUtils`**:
   - `handleAfterInsert`: for `Project_Assignment` roles, generates `Project_Allocation__c` rows weekly from `Start_Date__c` (snapped back to the previous Monday via `UtilNinja.findPreviousMonday`) through `End_Date__c` (or `Start_Date__c + 365` days when null).
   - `handleAfterUpdate`: when a `Project_Assignment`'s `Hours_Per_Week__c`, `Start_Date__c`, `End_Date__c`, or `Status__c` changes, re-queries the role with its child `Project_Allocations__r` and reconciles:
     - Date-range changes: delete allocations now outside the window; insert missing weekly allocations.
@@ -70,12 +70,12 @@ Not in this repo.
     - Open-to-closed status transition (`Active` → `Completed`/`Cancelled`): delete all child allocations.
   - All other handlers are no-op stubs.
   - `getRecordTypeId(developerName)` is a cached lookup used across the codebase.
-- **[`OpportunityUtils.handleAfterInsert`](../../force-app/main/default/classes/OpportunityUtils.cls)** auto-inserts a `Referral` role when a new Opportunity carries a Lead with `Referral_Contact__c`.
-- **[`ProjectUtils.handleAfterInsert`](../../force-app/main/default/classes/ProjectUtils.cls)** re-parents active `Contact_Role__r` records from the Opportunity onto the new Project.
-- **[`InvoiceUtils.handleAfterInsert`](../../force-app/main/default/classes/InvoiceUtils.cls)** queries the invoice's Project for `Project_Assignments__r` with record type `Referral` or `Sales_Team` and status `Active`, then creates `Referral_Commission_Payment__c` rows linking each role to the invoice.
-- **[`TimeSheetUtils.beforeInsert`/`beforeUpdate`](../../force-app/main/default/classes/TimeSheetUtils.cls)** match incoming timesheet rows to Contact Roles via `Jira_Matching_Key__c` (constructed as `<Done_By_Name>-<Project_Name>`).
-- **[`ProjectAllocationUtils.handleBeforeUpdate`](../../force-app/main/default/classes/ProjectAllocationUtils.cls)** compares an allocation's hours back to its parent Contact Role's `Hours_Per_Week__c` to decide the `Overridden__c` flag.
-- **[`ResourcePlannerController`](../../force-app/main/default/classes/ResourcePlannerController.cls)** queries Project_Assignment Contact Roles to build the resource-vs-project allocation heatmap.
+- **`OpportunityUtils.handleAfterInsert`** auto-inserts a `Referral` role when a new Opportunity carries a Lead with `Referral_Contact__c`.
+- **`ProjectUtils.handleAfterInsert`** re-parents active `Contact_Role__r` records from the Opportunity onto the new Project.
+- **`InvoiceUtils.handleAfterInsert`** queries the invoice's Project for `Project_Assignments__r` with record type `Referral` or `Sales_Team` and status `Active`, then creates `Referral_Commission_Payment__c` rows linking each role to the invoice.
+- **`TimeSheetUtils.beforeInsert` / `beforeUpdate`** match incoming timesheet rows to Contact Roles via `Jira_Matching_Key__c` (constructed as `<Done_By_Name>-<Project_Name>`).
+- **`ProjectAllocationUtils.handleBeforeUpdate`** compares an allocation's hours back to its parent Contact Role's `Hours_Per_Week__c` to decide the `Overridden__c` flag.
+- **`ResourcePlannerController`** queries Project_Assignment Contact Roles to build the resource-vs-project allocation heatmap.
 
 ## Flows touching this object
 

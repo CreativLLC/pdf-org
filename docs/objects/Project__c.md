@@ -54,13 +54,13 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`ProjectTrigger.trigger`](../../force-app/main/default/triggers/ProjectTrigger.trigger)** — full event set, delegating to **[`ProjectUtils`](../../force-app/main/default/classes/ProjectUtils.cls)**:
+- **`ProjectTrigger.trigger`** — full event set, delegating to **`ProjectUtils`**:
   - `handleAfterInsert`: for any new Project with `Opportunity__c` set, queries the Opportunity for active `Contact_Role__r` rows and updates each one's `Project__c = currentProject.Id`. Bulk update.
   - All other handlers are no-op stubs.
   - `getRecordTypeId(developerName)` cached lookup; `generateProject` is a test-data factory.
-- **[`ResourcePlannerController.getResourcePlannerModel`](../../force-app/main/default/classes/ResourcePlannerController.cls)** primes its project map with `[SELECT Id, Name, Target_Weekly_Hours__c, Account__r.Name FROM Project__c WHERE RecordTypeId = :Active]`, then joins to `Contact_Role__c` Project Assignments to build the weekly allocation matrix.
-- **[`InvoiceUtils`](../../force-app/main/default/classes/InvoiceUtils.cls)** reads `Project__c.Net_Payment_Terms__c` to default `Invoice__c.Payment_Days__c`, and queries `Project_Assignments__r` to create commission payments.
-- **[`InvoicePDFController`](../../force-app/main/default/classes/InvoicePDFController.cls)** reads `Project__r.Name` and `Project__r.PO_Number__c`.
+- **`ResourcePlannerController.getResourcePlannerModel`** primes its project map with `[SELECT Id, Name, Target_Weekly_Hours__c, Account__r.Name FROM Project__c WHERE RecordTypeId = :Active]`, then joins to `Contact_Role__c` Project Assignments to build the weekly allocation matrix.
+- **`InvoiceUtils`** reads `Project__c.Net_Payment_Terms__c` to default `Invoice__c.Payment_Days__c`, and queries `Project_Assignments__r` to create commission payments.
+- **`InvoicePDFController`** reads `Project__r.Name` and `Project__r.PO_Number__c`.
 
 ## Flows touching this object
 

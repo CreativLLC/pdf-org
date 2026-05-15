@@ -49,12 +49,12 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`RequirementUseCaseAfterSave.trigger`](../../force-app/main/default/triggers/RequirementUseCaseAfterSave.trigger)** — events: `after insert, after update`. **Body is entirely commented out.** No runtime behavior. The commented logic, if uncommented, would:
+- **`RequirementUseCaseAfterSave.trigger`** — events: `after insert, after update`. **Body is entirely commented out.** No runtime behavior. The commented logic, if uncommented, would:
   1. Collect referenced `Requirement__c` ids from the trigger context.
   2. Query all `Requirement_Use_Case__c` records under those requirements.
   3. Sum the eight estimate fields per requirement.
   4. Update each parent `Requirement__c` with the sums.
-- **[`TestRequirementTriggers.cls`](../../force-app/main/default/classes/TestRequirementTriggers.cls)** — test class (not read here in detail) presumably covers the disabled behavior.
+- **`TestRequirementTriggers.cls`** — test class (not read here in detail) presumably covers the disabled behavior.
 
 ## Flows touching this object
 

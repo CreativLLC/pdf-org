@@ -48,10 +48,10 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`ContactTrigger.trigger`](../../force-app/main/default/triggers/ContactTrigger.trigger)** — declared on `before insert, before update`. Dispatches to two collaborators in order:
-  1. **[`ContactUtils`](../../force-app/main/default/classes/ContactUtils.cls)** — `handleBeforeInsert` / `handleBeforeUpdate` set `currentContact.Lead__c = currentContact.Lead_Id_Passable__c` on each row, the same staging-field projection used by Account and Opportunity. `handleBeforeDelete` and all `handleAfter*` methods are no-op stubs.
-  2. **[`ContactPhoneNormalizer`](../../force-app/main/default/classes/ContactPhoneNormalizer.cls)** — `normalize(List<Contact>)` reformats each `Phone` in-place. Strips non-digits; if the result is 10 digits, formats as `(XXX) XXX-XXXX`; if it is 11 digits with a leading `1`, drops the `1` and formats; otherwise leaves the field unchanged. Pure in-memory mutation — no SOQL, no DML, idempotent on already-formatted input.
-- **[`ResourcePlannerController.cls`](../../force-app/main/default/classes/ResourcePlannerController.cls)** reads Contact via the `Contact_Role__c.Contact__r` traversal — never queries Contact directly, but treats it as the resource entity in the planner UI.
+- **`ContactTrigger.trigger`** — declared on `before insert, before update`. Dispatches to two collaborators in order:
+  1. **`ContactUtils`** — `handleBeforeInsert` / `handleBeforeUpdate` set `currentContact.Lead__c = currentContact.Lead_Id_Passable__c` on each row, the same staging-field projection used by Account and Opportunity. `handleBeforeDelete` and all `handleAfter*` methods are no-op stubs.
+  2. **`ContactPhoneNormalizer`** — `normalize(List<Contact>)` reformats each `Phone` in-place. Strips non-digits; if the result is 10 digits, formats as `(XXX) XXX-XXXX`; if it is 11 digits with a leading `1`, drops the `1` and formats; otherwise leaves the field unchanged. Pure in-memory mutation — no SOQL, no DML, idempotent on already-formatted input.
+- **`ResourcePlannerController.cls`** reads Contact via the `Contact_Role__c.Contact__r` traversal — never queries Contact directly, but treats it as the resource entity in the planner UI.
 
 ## Flows touching this object
 

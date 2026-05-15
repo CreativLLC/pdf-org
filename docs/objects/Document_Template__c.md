@@ -24,13 +24,13 @@ Root template for a class of generated PDF documents (e.g., Pre-Op Form, Trainin
 | **Type** | Custom (`__c`) |
 | **Label (singular / plural)** | `Document Template` / `Document Templates` |
 | **Name field** | `Name` — Text, "Template Name" |
-| **Origin** | Created for the PDF generator POC (see [`PdfGeneratorController`](../../force-app/main/default/classes/PdfGeneratorController.cls)). |
+| **Origin** | Created for the PDF generator POC (see `PdfGeneratorController`). |
 
 ## Key fields
 
 | Field API name | Label | Type | Required | Purpose |
 |---|---|---|---|---|
-| `Target_SObject__c` | Target SObject API Name | Text(80) | Yes | API name of the SObject this template generates against (e.g., `Form__c`, `Account`, `Opportunity`). Drives the dynamic SOQL in [`PdfTemplateService`](../../force-app/main/default/classes/PdfTemplateService.cls). |
+| `Target_SObject__c` | Target SObject API Name | Text(80) | Yes | API name of the SObject this template generates against (e.g., `Form__c`, `Account`, `Opportunity`). Drives the dynamic SOQL in `PdfTemplateService`. |
 | `Active__c` | Active | Checkbox (default true) | No | If unchecked, the Generate PDF button using this template is hidden/disabled. Enforced in `PdfGeneratorController.doGenerate`. |
 | `Default_Version__c` | Default Version | Lookup → `Template_Version__c` | No | Fallback version used when no `Template_Mapping__c` rule matches the source record. Delete constraint: SetNull. |
 | `File_Naming_Pattern__c` | File Naming Pattern | Text(255) | No | Tokenized file name. Tokens like `{{Name}}`, `{{CreatedDate}}`, `{{Field_Api_Name__c}}` are resolved at generate time. Defaults to `<Template Name> - <Record Name>` if blank. |
@@ -60,13 +60,13 @@ None.
 
 No Apex triggers. Read/write happens through controllers:
 
-- **[`PdfGeneratorController`](../../force-app/main/default/classes/PdfGeneratorController.cls)** (`@AuraEnabled`, `with sharing`):
+- **`PdfGeneratorController`** (`@AuraEnabled`, `with sharing`):
   - `generateAndSave(templateId, recordId)` / `generateAndSaveByName(templateName, recordId)` — resolves the template (by Id or Name), enforces `Active__c`, picks a `Template_Version__c` via `Template_Mapping__c` rules (or `Default_Version__c`), renders the VF page `DocumentRender` to PDF, saves as a `ContentVersion`/`ContentDocumentLink` on the source record, optionally supersedes prior generations.
   - `resolveVersion(dt, recordId)` — orders `Template_Mapping__c` by `Priority__c ASC NULLS LAST`, evaluates `Record_Type_Developer_Name__c` + `Match_Field_Api_Name__c`/`Match_Operator__c`/`Match_Value__c`, falls back to `Default_Version__c`.
   - `computeFileName(dt, recordId)` — expands `{{token}}` placeholders in `File_Naming_Pattern__c` against the source record.
-- **[`PdfTemplateService`](../../force-app/main/default/classes/PdfTemplateService.cls)** — `build(templateVersionId, recordId)` reads the parent `Document_Template__c.Target_SObject__c` to drive SOQL.
-- **[`TemplateBuilderController`](../../force-app/main/default/classes/TemplateBuilderController.cls)** — `getContext(templateVersionId)` reads parent `Document_Template__c.Name` and `Target_SObject__c` for the builder UI.
-- **[`DocumentRenderController`](../../force-app/main/default/classes/DocumentRenderController.cls)** — the VF controller for `/apex/DocumentRender`; receives `templateVersionId` + `recordId` via URL and delegates to `PdfTemplateService.build`.
+- **`PdfTemplateService`** — `build(templateVersionId, recordId)` reads the parent `Document_Template__c.Target_SObject__c` to drive SOQL.
+- **`TemplateBuilderController`** — `getContext(templateVersionId)` reads parent `Document_Template__c.Name` and `Target_SObject__c` for the builder UI.
+- **`DocumentRenderController`** — the VF controller for `/apex/DocumentRender`; receives `templateVersionId` + `recordId` via URL and delegates to `PdfTemplateService.build`.
 
 ## Flows touching this object
 

@@ -33,7 +33,7 @@ Custom fields referenced:
 
 Standard fields used: `Id`.
 
-The trigger also references the constant **[`CNST.Standard_Pricebook_Id`](../../force-app/main/default/classes/CNST.cls)** for the Pricebook2 Id.
+The trigger also references the constant **`CNST.Standard_Pricebook_Id`** for the Pricebook2 Id.
 
 ## Sharing model
 
@@ -45,7 +45,7 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`ProductAfterSave.trigger`](../../force-app/main/default/triggers/ProductAfterSave.trigger)** — events: `after insert, after update`. Inline logic (no handler class):
+- **`ProductAfterSave.trigger`** — events: `after insert, after update`. Inline logic (no handler class):
   1. Queries all existing `PricebookEntry` rows on the Pricebook named `'Standard Price Book'`, indexed by `Product2.Id`.
   2. For each `Product2` in `Trigger.new`, either creates a new active `PricebookEntry` (`Product2Id`, `UnitPrice = Base_Price__c`, `PriceBook2Id = CNST.Standard_Pricebook_Id`, `IsActive = true`) or updates the existing entry's `UnitPrice` to `Base_Price__c`.
   3. Bulk upserts the collected list.

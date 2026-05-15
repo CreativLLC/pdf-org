@@ -32,7 +32,7 @@ A revision of a [`Document_Template__c`](Document_Template__c.md). Holds the act
 | Field API name | Label | Type | Required | Purpose |
 |---|---|---|---|---|
 | `Document_Template__c` | Document Template | Master-Detail → `Document_Template__c` | Yes | Parent template. |
-| `Definition_Json__c` | Definition JSON | Long Text Area(131072) | No | Template body — page properties, root row/col tree, text spans, merge tokens, conditional rules, tables. Read and rendered by [`PdfTemplateService.build`](../../force-app/main/default/classes/PdfTemplateService.cls). If blank, the service falls back to the spillover file (see Constraints). |
+| `Definition_Json__c` | Definition JSON | Long Text Area(131072) | No | Template body — page properties, root row/col tree, text spans, merge tokens, conditional rules, tables. Read and rendered by `PdfTemplateService.build`. If blank, the service falls back to the spillover file (see Constraints). |
 | `Status__c` | Status | Picklist (restricted) | Yes | `Draft` = editable in the builder, not pickable by mapping rules; `Published` = locked, pickable; `Archived` = hidden from selection but kept for historical PDFs. Default `Draft`. |
 | `Revision_Number__c` | Revision Number | Number(4,0) | No | Numeric revision (1, 2, 3…). Used by `Template_Mapping__c` rules to map source records whose own `Revision_Number__c` (or equivalent) signals which version applies. |
 | `Sample_Record_Id__c` | Sample Record Id | Text(18) | No | Last-used preview record ID for builder convenience. Stored as plain Text rather than a polymorphic reference because the target SObject varies per template. |
@@ -61,11 +61,11 @@ None.
 
 No Apex triggers. Read/write through controllers:
 
-- **[`PdfTemplateService`](../../force-app/main/default/classes/PdfTemplateService.cls)**:
+- **`PdfTemplateService`**:
   - `build(templateVersionId, recordId)` — queries `Id, Document_Template__c, Definition_Json__c, Status__c`, then queries the parent for `Target_SObject__c`, then loads the JSON (field or spillover file) and invokes the renderer.
   - `loadDefinitionJson(tv)` — returns `Definition_Json__c` if non-blank, else reads `ContentVersion` rows linked to this record whose `Title = 'definition.json'`.
-- **[`PdfGeneratorController`](../../force-app/main/default/classes/PdfGeneratorController.cls)** — `resolveVersion(dt, recordId)` returns a `Template_Version__c.Id`; `removePriorVersions(versionId, recordId)` matches old PDFs by `ContentVersion.Source_Template_Version__c == versionId`.
-- **[`TemplateBuilderController`](../../force-app/main/default/classes/TemplateBuilderController.cls)** — `getContext(templateVersionId)` returns version + parent metadata for the builder LWC; `previewTemplate(...)` renders unsaved JSON against a sample record via `PdfTemplateService.buildFromJson`; `saveTemplate(templateVersionId, defJson, sampleRecordId)` validates JSON parses, then updates `Definition_Json__c` and `Sample_Record_Id__c`.
+- **`PdfGeneratorController`** — `resolveVersion(dt, recordId)` returns a `Template_Version__c.Id`; `removePriorVersions(versionId, recordId)` matches old PDFs by `ContentVersion.Source_Template_Version__c == versionId`.
+- **`TemplateBuilderController`** — `getContext(templateVersionId)` returns version + parent metadata for the builder LWC; `previewTemplate(...)` renders unsaved JSON against a sample record via `PdfTemplateService.buildFromJson`; `saveTemplate(templateVersionId, defJson, sampleRecordId)` validates JSON parses, then updates `Definition_Json__c` and `Sample_Record_Id__c`.
 
 ## Flows touching this object
 

@@ -59,8 +59,8 @@ No Apex triggers.
 
 `Form__c` is exercised as data by the PDF generator stack:
 
-- **[`PdfTemplateService`](../../force-app/main/default/classes/PdfTemplateService.cls)** queries it dynamically when a `Document_Template__c.Target_SObject__c = 'Form__c'`. Field set discovered by walking the template JSON for `{{token}}` references; child rows fetched via the `Signatures` child-relationship.
-- **[`PdfGeneratorController.computeFileName`](../../force-app/main/default/classes/PdfGeneratorController.cls)** expands `{{Patient_Name__c}}`, `{{Procedure_Date__c}}`, etc. into the saved PDF's file name.
+- **`PdfTemplateService`** queries it dynamically when a `Document_Template__c.Target_SObject__c = 'Form__c'`. Field set discovered by walking the template JSON for `{{token}}` references; child rows fetched via the `Signatures` child-relationship.
+- **`PdfGeneratorController.computeFileName`** expands `{{Patient_Name__c}}`, `{{Procedure_Date__c}}`, etc. into the saved PDF's file name.
 
 ## Flows touching this object
 

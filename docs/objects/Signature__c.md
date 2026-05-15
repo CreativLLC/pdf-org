@@ -59,8 +59,8 @@ No Apex triggers.
 
 Read indirectly by the PDF stack:
 
-- **[`PdfTemplateService.queryRelated`](../../force-app/main/default/classes/PdfTemplateService.cls)** — when a template's JSON references the `Signatures` child relationship (e.g., for a Physician signature image), this method dynamically queries `Signature__c` rows under the source `Form__c` record.
-- **[`PdfTemplateService.resolveImageDataUri`](../../force-app/main/default/classes/PdfTemplateService.cls)** — evaluates a `filterExpr` such as `row.Signature_Type__c == 'Physician'` against the child rows, picks the first match, then loads its first attached `ContentVersion` as a base64 data URI for inline embedding in the rendered HTML/PDF.
+- **`PdfTemplateService.queryRelated`** — when a template's JSON references the `Signatures` child relationship (e.g., for a Physician signature image), this method dynamically queries `Signature__c` rows under the source `Form__c` record.
+- **`PdfTemplateService.resolveImageDataUri`** — evaluates a `filterExpr` such as `row.Signature_Type__c == 'Physician'` against the child rows, picks the first match, then loads its first attached `ContentVersion` as a base64 data URI for inline embedding in the rendered HTML/PDF.
 
 ## Flows touching this object
 

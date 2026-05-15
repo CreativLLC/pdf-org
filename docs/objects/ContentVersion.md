@@ -14,7 +14,7 @@ related_docs:
 
 ## Purpose
 
-Standard Salesforce Files object. This engagement customizes it with one custom field, `Source_Template_Version__c`, which records the [`Template_Version__c`](Template_Version__c.md) that produced a generated PDF. The field is what enables the "overwrite-on-regenerate" behavior in [`PdfGeneratorController`](../../force-app/main/default/classes/PdfGeneratorController.cls): on regenerate, prior PDFs for the same template version on the same record are deleted before a fresh one is inserted. The field is also used (as a `Title` filter rather than a value) for definition JSON spillover when a `Template_Version__c.Definition_Json__c` exceeds 128KB.
+Standard Salesforce Files object. This engagement customizes it with one custom field, `Source_Template_Version__c`, which records the [`Template_Version__c`](Template_Version__c.md) that produced a generated PDF. The field is what enables the "overwrite-on-regenerate" behavior in `PdfGeneratorController`: on regenerate, prior PDFs for the same template version on the same record are deleted before a fresh one is inserted. The field is also used (as a `Title` filter rather than a value) for definition JSON spillover when a `Template_Version__c.Definition_Json__c` exceeds 128KB.
 
 ## Type and origin
 
@@ -53,10 +53,10 @@ No Apex triggers.
 
 Apex consumers:
 
-- **[`PdfGeneratorController.doGenerate`](../../force-app/main/default/classes/PdfGeneratorController.cls)** inserts a new `ContentVersion` for each generated PDF, setting `Title`, `PathOnClient`, `VersionData`, and `Source_Template_Version__c = String.valueOf(versionId)`. It then inserts a `ContentDocumentLink` to attach the new file to the source record.
-- **[`PdfGeneratorController.removePriorVersions`](../../force-app/main/default/classes/PdfGeneratorController.cls)** — when `Document_Template__c.Overwrite_Existing_File__c = true`, queries `ContentVersion` rows linked to the source record where `IsLatest = true AND Source_Template_Version__c = :versionStr`, collects their `ContentDocumentId`s, and deletes the underlying `ContentDocument`s.
-- **[`PdfTemplateService.loadDefinitionJson`](../../force-app/main/default/classes/PdfTemplateService.cls)** — when a `Template_Version__c.Definition_Json__c` is blank, looks for a `ContentVersion` titled exactly `definition.json` linked to that version record and reads its `VersionData` as the template body. This is the spillover path for templates larger than the 128KB long-text cap.
-- **[`PdfTemplateService.loadFirstFileAsDataUri`](../../force-app/main/default/classes/PdfTemplateService.cls)** — for any record (typically a [`Signature__c`](Signature__c.md)), reads the most recent `ContentVersion.IsLatest = true` and inlines it as a base64 data URI in the rendered HTML. MIME type is inferred from `FileExtension` (`jpg`/`jpeg` → `image/jpeg`, `gif` → `image/gif`, `svg` → `image/svg+xml`, else `image/png`).
+- **`PdfGeneratorController.doGenerate`** inserts a new `ContentVersion` for each generated PDF, setting `Title`, `PathOnClient`, `VersionData`, and `Source_Template_Version__c = String.valueOf(versionId)`. It then inserts a `ContentDocumentLink` to attach the new file to the source record.
+- **`PdfGeneratorController.removePriorVersions`** — when `Document_Template__c.Overwrite_Existing_File__c = true`, queries `ContentVersion` rows linked to the source record where `IsLatest = true AND Source_Template_Version__c = :versionStr`, collects their `ContentDocumentId`s, and deletes the underlying `ContentDocument`s.
+- **`PdfTemplateService.loadDefinitionJson`** — when a `Template_Version__c.Definition_Json__c` is blank, looks for a `ContentVersion` titled exactly `definition.json` linked to that version record and reads its `VersionData` as the template body. This is the spillover path for templates larger than the 128KB long-text cap.
+- **`PdfTemplateService.loadFirstFileAsDataUri`** — for any record (typically a [`Signature__c`](Signature__c.md)), reads the most recent `ContentVersion.IsLatest = true` and inlines it as a base64 data URI in the rendered HTML. MIME type is inferred from `FileExtension` (`jpg`/`jpeg` → `image/jpeg`, `gif` → `image/gif`, `svg` → `image/svg+xml`, else `image/png`).
 
 ## Flows touching this object
 

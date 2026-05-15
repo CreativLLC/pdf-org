@@ -58,7 +58,7 @@ None — operator/value coherence is enforced in Apex (`PdfGeneratorController.m
 
 No Apex triggers.
 
-- **[`PdfGeneratorController.resolveVersion`](../../force-app/main/default/classes/PdfGeneratorController.cls)** is the only reader:
+- **`PdfGeneratorController.resolveVersion`** is the only reader:
   1. SOQL: `SELECT Id, Template_Version__c, Record_Type_Developer_Name__c, Match_Field_Api_Name__c, Match_Operator__c, Match_Value__c, Priority__c FROM Template_Mapping__c WHERE Document_Template__c = :dt.Id ORDER BY Priority__c ASC NULLS LAST`.
   2. For each rule, evaluates record-type filter (when set), then operator:
      - `Default` → always match.

@@ -59,12 +59,12 @@ Not in this repo.
 
 Three triggers fire on this object:
 
-- **[`TimeSheetBeforeSave.trigger`](../../force-app/main/default/triggers/TimeSheetBeforeSave.trigger)** — events: `before insert, before update`. Inline logic (no handler): zeroes `Total_Hours__c` and adds the eight category fields. Runs unconditionally.
-- **[`TimeSheetTrigger.trigger`](../../force-app/main/default/triggers/TimeSheetTrigger.trigger)** — declared on the full event set but only the before-insert and before-update branches actually delegate (the after-* branches are commented out). Calls **[`TimeSheetUtils`](../../force-app/main/default/classes/TimeSheetUtils.cls)**:
+- **`TimeSheetBeforeSave.trigger`** — events: `before insert, before update`. Inline logic (no handler): zeroes `Total_Hours__c` and adds the eight category fields. Runs unconditionally.
+- **`TimeSheetTrigger.trigger`** — declared on the full event set but only the before-insert and before-update branches actually delegate (the after-* branches are commented out). Calls **`TimeSheetUtils`**:
   - `beforeInsert`: builds matching keys `<Done_By_Name>-<Project_Name>`, queries active `Contact_Role__c` rows where `Jira_Matching_Key__c IN :keys`, populates `Contact_Role__c`, `Done_By__c`, `Project__c` from the matched role, normalizes `Date__c` via `UtilNinja.convertTempoDateString` if null.
   - `beforeUpdate`: same matching pass, but only when `Done_By_Name__c`, `Project_Name__c`, or `Contact_Role__c` changed; re-normalizes `Date__c` when `Work_Date__c` changes or `Date__c` is null.
-- **[`TimeSheetAfterIUD.trigger`](../../force-app/main/default/triggers/TimeSheetAfterIUD.trigger)** — events: `after insert, after update, after delete`. Inline logic: collects affected `Time_Sheet__c.Invoice__r.Support_Contract__c` ids (from `Trigger.oldMap` on delete; `Trigger.newMap` otherwise), then calls [`Logic_Contract.rollupTimeSheets(contractIds)`](../../force-app/main/default/classes/Logic_Contract.cls) and updates the resulting Contract list.
-- **[`InvoicePDFController`](../../force-app/main/default/classes/InvoicePDFController.cls)** reads Time Sheets matching the invoice's project and date range, then groups by Epic + Resource for rendering.
+- **`TimeSheetAfterIUD.trigger`** — events: `after insert, after update, after delete`. Inline logic: collects affected `Time_Sheet__c.Invoice__r.Support_Contract__c` ids (from `Trigger.oldMap` on delete; `Trigger.newMap` otherwise), then calls `Logic_Contract.rollupTimeSheets(contractIds)` and updates the resulting Contract list.
+- **`InvoicePDFController`** reads Time Sheets matching the invoice's project and date range, then groups by Epic + Resource for rendering.
 
 ## Flows touching this object
 

@@ -59,15 +59,15 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`InvoiceTrigger.trigger`](../../force-app/main/default/triggers/InvoiceTrigger.trigger)** — full event set, delegating to **[`InvoiceUtils`](../../force-app/main/default/classes/InvoiceUtils.cls)**:
+- **`InvoiceTrigger.trigger`** — full event set, delegating to **`InvoiceUtils`**:
   - `handleBeforeInsert` / `handleBeforeUpdate`: defaults `Payment_Days__c` from the parent Project's `Net_Payment_Terms__c`; nulls become zeros for `Work_Done_Amount__c` and `Pre_Paid_Amount__c`; recomputes `Invoice_Total__c`.
   - `handleAfterInsert`:
     1. For each invoice with `Project__c`, queries the project's `Project_Assignments__r` filtered to `Referral` or `Sales_Team` record types with `Status__c = 'Active'`, and inserts one `Referral_Commission_Payment__c` per role (`Contact_Role__c`, `Invoice__c` set).
     2. For each invoice with `Deposit_Invoice__c`, recomputes the deposit invoice's `Available_Credit__c`.
   - `handleAfterUpdate`: re-runs the deposit-invoice credit recomputation when `Deposit_Invoice__c` is non-null.
-- **[`InvoicePDFController.cls`](../../force-app/main/default/classes/InvoicePDFController.cls)** — Visualforce controller for the printable invoice. Reads the invoice + invoiced Account + the `Time_Sheet__c` rows whose `Project__c` and `Date__c` fall within the invoice period; groups them by `Epic__c` and `Resource_Type__c` (or `Done_By_Name__c` when `Billing_Type__c = 'Individual'`); computes per-resource, per-epic, and overall hours/rates/totals.
-- **[`TimeSheetAfterIUD.trigger`](../../force-app/main/default/triggers/TimeSheetAfterIUD.trigger)** reads `Invoice__r.Support_Contract__c` to roll up hours to the related `Contract`.
-- **[`Logic_Contract.rollupTimeSheets`](../../force-app/main/default/classes/Logic_Contract.cls)** queries `Time_Sheet__c` traversing `Invoice__r.Support_Contract__r.Id` to sum hours per Contract.
+- **`InvoicePDFController.cls`** — Visualforce controller for the printable invoice. Reads the invoice + invoiced Account + the `Time_Sheet__c` rows whose `Project__c` and `Date__c` fall within the invoice period; groups them by `Epic__c` and `Resource_Type__c` (or `Done_By_Name__c` when `Billing_Type__c = 'Individual'`); computes per-resource, per-epic, and overall hours/rates/totals.
+- **`TimeSheetAfterIUD.trigger`** reads `Invoice__r.Support_Contract__c` to roll up hours to the related `Contract`.
+- **`Logic_Contract.rollupTimeSheets`** queries `Time_Sheet__c` traversing `Invoice__r.Support_Contract__r.Id` to sum hours per Contract.
 
 ## Flows touching this object
 

@@ -54,14 +54,14 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`TransactionAfterSave.trigger`](../../force-app/main/default/triggers/TransactionAfterSave.trigger)** — events: `after insert, after update`. Inline dispatch (no handler class delegation, though it calls `TransactionLogic`):
+- **`TransactionAfterSave.trigger`** — events: `after insert, after update`. Inline dispatch (no handler class delegation, though it calls `TransactionLogic`):
   - **Budget on insert** → `TransactionLogic.generateNewInstances(trans)` → returns a list of `Instance` rows from `Date__c` to `End_Date__c` (or `Date.today() + 2 years`), added to a bulk upsert list.
   - **Budget on update** → `TransactionLogic.updateUnpaidInstances(trans)` → returns the existing `Status__c = 'Planned'` instances re-positioned forward from the most recent paid date (or the budget start), with refreshed Amount/Source/Destination/Status.
   - **Recurring on any save** → adds `trans.Id` to a set passed to `TransactionLogic.upsertInstances(recurringTransIds)` at the end. This method walks from `Date__c` forward, generating placeholder Instances, then reconciles them against existing `Instance` rows whose `Status__c` is `Planned` or `Cancelled` — preserving paid/cleared instances and pruning surplus.
   - **Instance on update**, where `Status__c` changed to `Cleared` or `Cancelled` → adds `trans.Instance_Of__c` to the recurring-id set, triggering the same forward-projection. This is how clearing an instance causes the recurring schedule to refresh.
-- **[`TransactionLogic.cls`](../../force-app/main/default/classes/TransactionLogic.cls)** — three public statics: `generateNewInstances`, `updateUnpaidInstances`, `upsertInstances`. Also contains a legacy `testTransactionAfterSave` test method inline (anti-pattern — tests belong in `*Test` classes).
-- **[`RollupTransaction.cls`](../../force-app/main/default/classes/RollupTransaction.cls)** — a small wrapper DTO (`Transaction__c trans`, `rowLabel`, `rowId`, `rollupValue`). Not used in any other class read here; likely consumed by Visualforce pages outside this repo.
-- **[`AccountForecastController.cls`](../../force-app/main/default/classes/AccountForecastController.cls)** — Visualforce controller for `/apex/AccountForecast`. Queries Transactions where `From__c = :accountId OR To__c = :accountId` with `Status__c IN ('Planned', 'Paid')`, ordered by `Date__c`, and produces a running-balance table for the bound `Acct__c` record.
+- **`TransactionLogic.cls`** — three public statics: `generateNewInstances`, `updateUnpaidInstances`, `upsertInstances`. Also contains a legacy `testTransactionAfterSave` test method inline (anti-pattern — tests belong in `*Test` classes).
+- **`RollupTransaction.cls`** — a small wrapper DTO (`Transaction__c trans`, `rowLabel`, `rowId`, `rollupValue`). Not used in any other class read here; likely consumed by Visualforce pages outside this repo.
+- **`AccountForecastController.cls`** — Visualforce controller for `/apex/AccountForecast`. Queries Transactions where `From__c = :accountId OR To__c = :accountId` with `Status__c IN ('Planned', 'Paid')`, ordered by `Date__c`, and produces a running-balance table for the bound `Acct__c` record.
 
 ## Flows touching this object
 

@@ -47,12 +47,12 @@ Not in this repo.
 
 ## Triggers and Apex touching this object
 
-- **[`ProjectAllocationTrigger.trigger`](../../force-app/main/default/triggers/ProjectAllocationTrigger.trigger)** — full event set, delegating to **[`ProjectAllocationUtils`](../../force-app/main/default/classes/ProjectAllocationUtils.cls)**:
+- **`ProjectAllocationTrigger.trigger`** — full event set, delegating to **`ProjectAllocationUtils`**:
   - `handleBeforeUpdate`: for any allocation whose `Hours__c` changed, queries the parent Contact Role's `Hours_Per_Week__c` and sets `Overridden__c = (Hours__c != Hours_Per_Week__c)`. This is the inverse signal used by `ContactRoleUtils.handleAfterUpdate` (it skips overridden allocations when bulk-updating hours).
   - All other handlers are no-op stubs.
   - `generateProjectAllocation` is a test-data factory.
-- **[`ContactRoleUtils.handleAfterInsert`/`handleAfterUpdate`](../../force-app/main/default/classes/ContactRoleUtils.cls)** is the *only* source of allocation creates/deletes/upserts. Allocations are not typically created by hand.
-- **[`ResourcePlannerController`](../../force-app/main/default/classes/ResourcePlannerController.cls)** queries allocations through the `Contact_Role__c.Project_Allocations__r` child relationship and sums per-week hours by resource and by project to render the heatmap.
+- **`ContactRoleUtils.handleAfterInsert` / `handleAfterUpdate`** is the *only* source of allocation creates/deletes/upserts. Allocations are not typically created by hand.
+- **`ResourcePlannerController`** queries allocations through the `Contact_Role__c.Project_Allocations__r` child relationship and sums per-week hours by resource and by project to render the heatmap.
 
 ## Flows touching this object
 

@@ -1,13 +1,17 @@
 ---
 title: Meditrina — Engagement Documentation Index
 audience: public
-last_updated: 2026-05-14
-last_updated_by: archon-discover
+last_updated: 2026-05-15
+last_updated_by: drew.smith@openwacca.com
 related_tickets: []
 related_docs: [README.md]
 ---
 
 # Meditrina — Engagement Documentation Index
+
+## About Meditrina
+
+Meditrina is a long-standing Salesforce customer of CreativLLC. Their org houses two weakly-coupled subsystems: a legacy PSA core (time-and-billing, project resourcing, opportunity-to-invoice) built up over roughly a decade, and a newer PDF generator POC that lets admins design reusable document templates and render merged PDFs from any Salesforce record. These docs describe the org's current state — what objects exist, what Apex automation runs, what features that automation delivers. This engagement repository is maintained by CreativLLC and updated through the [archon-salesforce-jira harness](https://github.com/CreativLLC/archon-salesforce-jira) as `/sf` and `/sf-discover` workflows run against Jira tickets.
 
 > **For AI agents:** load this file first, then load ONLY the docs in the "Quick paths" section relevant to your current task. Do not load the entire `docs/` tree by default.
 
@@ -105,6 +109,6 @@ See [`decisions/`](./decisions/) for the full list. *(No engagement-specific ADR
 
 ## How this index stays current
 
-- Every `/sf` run that creates a new object / feature / flow / integration doc adds an entry to the corresponding section above ([ADR-0010 §3](../../.archon/decisions/0010-engagement-documentation-model.md)).
+- Every `/sf` run that creates a new object / feature / flow / integration doc adds an entry to the corresponding section above (per [ADR-0010 §3](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/decisions/0010-engagement-documentation-model.md)).
 - Descriptions on existing entries are updated when a `/sf` run materially changes what the underlying doc describes.
 - If you see a stale or missing entry, edit this file directly — it's not generated.

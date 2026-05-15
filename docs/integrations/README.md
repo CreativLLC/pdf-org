@@ -1,28 +1,20 @@
-# Integrations
+---
+title: Integrations
+audience: public
+last_updated: 2026-05-15
+last_updated_by: drew.smith@openwacca.com
+related_tickets: []
+related_docs: [../index.md]
+---
 
-One file per external system the engagement's org talks to. Internal SF-to-SF data movement is not an integration — that's architecture, documented in [`../architecture/`](../architecture/).
+# Integrations — Meditrina
 
-## When to add an integration doc
-
-Add a doc when:
-- A new external system is connected.
-- The auth model changes for an existing integration.
-- A new endpoint, webhook, or channel is added.
-- The error-handling or retry behavior changes materially.
-
-Update the existing doc when:
-- A new payload field is added.
-- The rate limits or bulk strategy change.
-- A new failure mode is observed and a runbook is updated.
-
-## Template
-
-The integration doc template lives at [`harness/docs-templates/integration-doc.md`](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/docs-templates/integration-doc.md). Required sections: Purpose, Direction(s) and pattern, Authentication, Endpoints/channels, Payloads, Error handling and retries, Bulk and rate limits, Monitoring, SF-side surface area, External-side surface area, Failure modes and runbook, History.
+External systems this engagement's Salesforce org reads from, writes to, or both. One file per integration boundary, regardless of transport (REST, platform events, SOAP, callouts, webhooks, named credentials).
 
 ## Index
 
-| System | Direction | Doc |
-|---|---|---|
-| Stripe | Bidirectional | [`Stripe-billing.md`](./Stripe-billing.md) |
+*Empty until `/sf-discover` or `/sf` runs populate this section. The current engagement source contains no external integrations (no named credentials, connected apps, REST classes, or HTTP callouts).*
 
-*(Phase 1.5 will add: DocuSign, Snowflake, Marketo.)*
+---
+
+Doc template: [`integration-doc.md`](../.harness-templates/integration-doc.md). Authoring guidance: [harness docs-templates](https://github.com/CreativLLC/archon-salesforce-jira/tree/main/docs-templates).

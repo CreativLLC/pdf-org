@@ -9,7 +9,6 @@ related_docs:
   - Contact_Role__c.md
   - Project__c.md
   - Invoice__c.md
-  - ../changelog/2026-05/GRIM-49.md
 ---
 
 # `Opportunity`
@@ -57,12 +56,12 @@ Not in this repo.
   - All other `handleBefore*` / `handleAfter*` are no-op stubs.
 - **[`OpportunityBeforeUpsert.trigger`](../../force-app/main/default/triggers/OpportunityBeforeUpsert.trigger)** — events: `before insert, before update`. Duplicates the `Quote_Valid_Until__c` calc that `OpportunityUtils.handleBeforeInsert` already does. Both triggers fire on insert; on update only this one fires (`OpportunityUtils.handleBeforeUpdate` is a stub).
 - **[`Logic_Contract.cls`](../../force-app/main/default/classes/Logic_Contract.cls)** — operates on standard `Contract` (not `Opportunity`); listed in classification because of business adjacency. Rolls up `Time_Sheet__c.Total_Hours__c` to `Contract.Contract_Hours_Used__c` via the `Invoice__c.Support_Contract__c` chain.
-- **[`OpportunityTriggerHandler.cls`](../../force-app/main/default/classes/OpportunityTriggerHandler.cls)** — extends [`TriggerHandler`](../../force-app/main/default/classes/TriggerHandler.cls) (the harness `apex-trigger-handler` pattern's abstract base, introduced with this handler). Wired via `new OpportunityTriggerHandler().run();` at the end of `OpportunityTrigger`. Overrides only `afterUpdate()`:
+- **[`OpportunityTriggerHandler.cls`](../../force-app/main/default/classes/OpportunityTriggerHandler.cls)** — extends [`TriggerHandler`](../../force-app/main/default/classes/TriggerHandler.cls), the harness `apex-trigger-handler` pattern's abstract base. Wired via `new OpportunityTriggerHandler().run();` at the end of `OpportunityTrigger`. Overrides only `afterUpdate()`:
   - On a `StageName` transition to `Negotiation/Review`, inserts one `Task` (`Subject = 'Draft proposal for <Opp.Name>'`, `WhatId = Opp.Id`, `OwnerId = Opp.OwnerId`, `ActivityDate = today + 3 business days`, `Status = 'Not Started'`).
   - On a transition to `Closed Won`, inserts a `Task` (`Subject = 'Send thank-you + invoice for <Opp.Name>'`, `OwnerId = Opp.OwnerId`, +1 business day). Additionally, if a single SOQL aggregate count shows zero OTHER `Closed Won` Opportunities on the parent `Account`, inserts a second `Task` on the **Account owner** (`Subject = 'Welcome new customer: <Account.Name>'`, +2 business days).
   - **Bulk safety:** exactly two SOQLs per transaction (one Opportunity aggregate count, one Account lookup, both with `WITH USER_MODE`) and one batched DML insert (`Database.insert(tasks, AccessLevel.USER_MODE)`) for all Tasks regardless of how many Opps changed.
   - **FLS/CRUD:** explicit `Schema.sObjectType.Task.isCreateable()` + per-field prechecks on Subject/WhatId/OwnerId/ActivityDate/Status; explicit `Account.fields.OwnerId.isAccessible()` precheck before the welcome path. Failures throw the inner `OpportunityTriggerHandler.FlsException`.
-  - **In-batch edge:** if two Opportunities on the same Account transition to Closed Won in the same DML, both qualify for a welcome Task (the aggregate count excludes current-batch Ids). Each Account in that scenario receives 2 welcome Tasks — see [`GRIM-49 changelog`](../changelog/2026-05/GRIM-49.md) for the open follow-up.
+  - **In-batch edge:** if two Opportunities on the same Account transition to Closed Won in the same DML, both qualify for a welcome Task (the aggregate count excludes current-batch Ids). Each Account in that scenario receives 2 welcome Tasks rather than 1.
 
 ## Flows touching this object
 

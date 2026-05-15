@@ -1,35 +1,18 @@
-# Standards (Engagement-Specific Overrides Only)
+---
+title: Standards
+audience: public
+last_updated: 2026-05-15
+last_updated_by: drew.smith@openwacca.com
+related_tickets: []
+related_docs: [../index.md]
+---
 
-This directory holds standard overrides for **this specific engagement** when it must deviate from the team-wide standards. **Most engagements will leave this directory empty** — the team's defaults apply unmodified.
+# Engagement-specific standards — Meditrina
 
-## Where the standards actually live
+Engagement-specific standards that diverge from or extend the team canon at [harness/standards/](https://github.com/CreativLLC/archon-salesforce-jira/tree/main/standards). Most engagements have zero or near-zero entries here — defaulting to harness canon is the norm.
 
-The team-wide standards are in the harness repo at [`harness/standards/`](https://github.com/CreativLLC/archon-salesforce-jira/tree/main/standards). *(Phase 1 leaves the team standards directory as a placeholder; Phase 1.5 fleshes it out.)*
-
-## Standards vs patterns
-
-- A **pattern** says *"when X, do Y"* — recommended.
-- A **standard** says *"always Y, never not-Y"* — enforced.
-
-Standards are non-negotiable defaults. Workflows enforce them. An override here is a deliberate engagement-level deviation, not a casual choice.
-
-## When to add an override here
-
-The bar for overriding a standard is higher than for overriding a pattern. Add a standards override only when:
-
-- The engagement has a constraint the team-wide standard literally cannot accommodate.
-- The override has been reviewed and approved by the engagement architect plus at least one other senior team member.
-- An ADR documents the rationale.
-- A sunset condition specifies when the override should be revisited.
-
-## Process for adding an override
-
-1. Open a Jira ticket describing the deviation.
-2. Author an ADR in [`../decisions/`](../decisions/).
-3. Author the override here using the [`harness/docs-templates/standards-override.md`](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/docs-templates/standards-override.md) template.
-4. Get approval from the engagement architect and one other senior team member before merging.
-5. Specify a sunset condition.
+A **standard** ("always Y, never not-Y") is non-negotiable and enforced by workflows. The bar for overriding one is higher than for overriding a pattern — requires an ADR plus a sunset condition.
 
 ## Index
 
-*(empty — this exemplar engagement follows team standards unmodified.)*
+*Empty.*

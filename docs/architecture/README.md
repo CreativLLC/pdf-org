@@ -1,21 +1,22 @@
-# Architecture
+---
+title: Architecture
+audience: public
+last_updated: 2026-05-15
+last_updated_by: drew.smith@openwacca.com
+related_tickets: []
+related_docs: [../index.md]
+---
 
-The "why" of Acme Co.'s renewal management system. Documents in this directory describe the org at the *system* level — how objects relate, how data flows, why the topology is what it is. Per-object detail belongs in [`../objects/`](../objects/); per-flow detail in [`../flows/`](../flows/); per-integration detail in [`../integrations/`](../integrations/).
+# Architecture — Meditrina
 
-## Documents in this directory
+The "why" of Meditrina's Salesforce org: system overview, subsystem boundaries, sharing model, integration topology, and any cross-cutting design notes. The org contains two weakly-coupled subsystems — a legacy PSA core (time-and-billing, project resourcing) and a newer PDF generator POC — documented at the object level under [`../objects/`](../objects/) and at the feature level under [`../features/`](../features/).
 
-| Doc | Purpose |
-|---|---|
-| [`overview.md`](./overview.md) | The system's purpose, top-level object model, and primary processes |
-| `sharing-model.md` *(Phase 1.5)* | Roles, profiles, OWD, sharing rules, and the rationale |
-| `integration-topology.md` *(Phase 1.5)* | External systems, directions, sync vs async, failure isolation |
+## Index
 
-## When to add a doc here
+*Empty until populated. Suggested first additions:*
 
-Add an architecture doc when:
+- `overview.md` — high-level system map (mermaid diagrams of object subsystems)
+- `sharing-model.md` — OWD + sharing rules + Apex sharing posture
+- `integration-topology.md` — system context diagram (currently no external integrations, so this is a placeholder)
 
-- A choice spans multiple objects or processes (e.g., "we use platform events as the spine for cross-system sync") and needs a single canonical explanation.
-- A new system-level concept is introduced (e.g., "the renewal lifecycle has these five states; here's how they map to billing").
-- An ADR's consequences need a longer narrative form than the ADR itself supports.
-
-Do *not* add an architecture doc for a single-object or single-flow concern — those live in `objects/` or `flows/`.
+Architecture docs are authored by engineers, not auto-generated.

@@ -1,29 +1,20 @@
-# Objects
+---
+title: Objects
+audience: public
+last_updated: 2026-05-15
+last_updated_by: drew.smith@openwacca.com
+related_tickets: []
+related_docs: [../index.md]
+---
 
-One file per significant standard-with-customizations or custom object in the org. Out-of-the-box standard objects with no engagement-specific customizations are *not* documented here — Salesforce documents those.
+# Objects — Meditrina
 
-## When to add an object doc
-
-Add a doc when:
-- A custom object is created.
-- A standard object is materially customized — new required fields, custom validation rules, custom triggers, custom Apex consumers, custom integrations.
-- A junction object or external object is added.
-- A custom metadata type is added that drives configuration.
-
-Update the existing doc when:
-- A field is added, removed, or renamed.
-- A trigger or Apex class touching the object changes.
-- The sharing posture changes.
-- A new validation rule is added.
-
-## Template
-
-The object doc template lives at [`harness/docs-templates/object-doc.md`](https://github.com/CreativLLC/archon-salesforce-jira/blob/main/docs-templates/object-doc.md). Required sections: Purpose, Type and origin, Key fields, Relationships, Sharing model, Validation rules, Triggers and Apex, Flows, Integrations, Test coverage, Constraints and gotchas, History.
+The canonical reference layer for Salesforce objects in this engagement. One file per significant standard-with-customizations or custom object. Standard objects with no engagement-specific customizations are not documented here — Salesforce documents those.
 
 ## Index
 
-| Object | Type | Doc |
-|---|---|---|
-| `Renewal__c` | Custom | [`Renewal__c.md`](./Renewal__c.md) |
+The full list of object docs is auto-discovered into the sidebar by awesome-pages — each `.md` file in this directory appears as a child of "Objects." See [the engagement index](../index.md) for an organized overview grouped by subsystem (PDF generator vs. PSA core).
 
-*(Phase 1.5 will add: `Account` (with Acme customizations), `Contract` (with Acme customizations), `Renewal_Line_Item__c`, `Renewal_Status__mdt`.)*
+---
+
+Doc template: [`object-doc.md`](../.harness-templates/object-doc.md). Authoring guidance: [harness docs-templates](https://github.com/CreativLLC/archon-salesforce-jira/tree/main/docs-templates).

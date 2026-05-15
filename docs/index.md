@@ -3,7 +3,8 @@ title: Meditrina — Engagement Documentation Index
 audience: public
 last_updated: 2026-05-15
 last_updated_by: drew.smith@openwacca.com
-related_tickets: []
+related_tickets:
+  - GRIM-50
 related_docs: [README.md]
 ---
 
@@ -67,7 +68,7 @@ Canonical reference layer (one doc per significant object). 17 objects documente
 | Object | Description |
 |---|---|
 | [`Account`](./objects/Account.md) | Customer entity. Two triggers maintain an audit timestamp and re-project custom-named staging fields onto standard relationships. |
-| [`Contact`](./objects/Contact.md) | Standard Contact with one trigger that re-projects a `Lead_Id_Passable__c` staging field onto the standard-named lookup. |
+| [`Contact`](./objects/Contact.md) | Standard Contact with one trigger that re-projects a `Lead_Id_Passable__c` staging field onto the standard-named lookup and auto-formats `Phone` to `(XXX) XXX-XXXX` on save. |
 | [`Contact_Role__c`](./objects/Contact_Role__c.md) | Junction linking Contact to Opportunity / Project / Lead in distinct role types. Project Assignments drive the allocation generator. |
 | [`Opportunity`](./objects/Opportunity.md) | Sales record. Computes quote-validity date and auto-creates referral commission roles from the originating lead. |
 | [`Project__c`](./objects/Project__c.md) | Delivery object owning a customer, opportunity, weekly hour targets, payment terms, resources, and invoices. |

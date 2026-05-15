@@ -1,0 +1,127 @@
+{
+  "status": 0,
+  "result": {
+    "checkOnly": false,
+    "completedDate": "2026-05-15T21:23:44.000Z",
+    "createdBy": "00530000005oGYh",
+    "createdByName": "Jordan Howard",
+    "createdDate": "2026-05-15T21:23:41.000Z",
+    "details": {
+      "componentSuccesses": [
+        {
+          "changed": true,
+          "componentType": "ApexClass",
+          "created": true,
+          "createdDate": "2026-05-15T21:23:43.000Z",
+          "deleted": false,
+          "fileName": "classes/ContactPhoneNormalizer.cls",
+          "fullName": "ContactPhoneNormalizer",
+          "id": "01pNq00000Xbf2nIAB",
+          "success": true
+        },
+        {
+          "changed": true,
+          "componentType": "ApexClass",
+          "created": true,
+          "createdDate": "2026-05-15T21:23:43.000Z",
+          "deleted": false,
+          "fileName": "classes/ContactPhoneNormalizer_Test.cls",
+          "fullName": "ContactPhoneNormalizer_Test",
+          "id": "01pNq00000Xbf2oIAB",
+          "success": true
+        },
+        {
+          "changed": true,
+          "componentType": "ApexTrigger",
+          "created": false,
+          "createdDate": "2026-05-15T21:23:44.000Z",
+          "deleted": false,
+          "fileName": "triggers/ContactTrigger.trigger",
+          "fullName": "ContactTrigger",
+          "id": "01q3x000000Z3x5AAC",
+          "success": true
+        },
+        {
+          "changed": true,
+          "componentType": "",
+          "created": false,
+          "createdDate": "2026-05-15T21:23:44.000Z",
+          "deleted": false,
+          "fileName": "package.xml",
+          "fullName": "package.xml",
+          "success": true
+        }
+      ],
+      "runTestResult": {
+        "numFailures": 0,
+        "numTestsRun": 0,
+        "totalTime": 0,
+        "codeCoverage": [],
+        "codeCoverageWarnings": [],
+        "failures": [],
+        "flowCoverage": [],
+        "flowCoverageWarnings": [],
+        "successes": []
+      },
+      "componentFailures": []
+    },
+    "done": true,
+    "id": "0AfNq00000XKdWrKAL",
+    "ignoreWarnings": false,
+    "lastModifiedDate": "2026-05-15T21:23:44.000Z",
+    "numberComponentErrors": 0,
+    "numberComponentsDeployed": 3,
+    "numberComponentsTotal": 3,
+    "numberFiles": "9",
+    "numberTestErrors": 0,
+    "numberTestsCompleted": 0,
+    "numberTestsTotal": 0,
+    "rollbackOnError": true,
+    "runTestsEnabled": false,
+    "startDate": "2026-05-15T21:23:41.000Z",
+    "status": "Succeeded",
+    "success": true,
+    "zipSize": 3696,
+    "files": [
+      {
+        "fullName": "ContactPhoneNormalizer",
+        "type": "ApexClass",
+        "state": "Created",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\classes\\ContactPhoneNormalizer.cls"
+      },
+      {
+        "fullName": "ContactPhoneNormalizer",
+        "type": "ApexClass",
+        "state": "Created",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\classes\\ContactPhoneNormalizer.cls-meta.xml"
+      },
+      {
+        "fullName": "ContactPhoneNormalizer_Test",
+        "type": "ApexClass",
+        "state": "Created",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\classes\\ContactPhoneNormalizer_Test.cls"
+      },
+      {
+        "fullName": "ContactPhoneNormalizer_Test",
+        "type": "ApexClass",
+        "state": "Created",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\classes\\ContactPhoneNormalizer_Test.cls-meta.xml"
+      },
+      {
+        "fullName": "ContactTrigger",
+        "type": "ApexTrigger",
+        "state": "Changed",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\triggers\\ContactTrigger.trigger"
+      },
+      {
+        "fullName": "ContactTrigger",
+        "type": "ApexTrigger",
+        "state": "Changed",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\triggers\\ContactTrigger.trigger-meta.xml"
+      }
+    ],
+    "zipFileCount": 7,
+    "deployUrl": "https://openwacca--pdf.sandbox.my.salesforce.com/lightning/setup/DeployStatus/page?address=%2Fchangemgmt%2FmonitorDeploymentsDetails.apexp%3FasyncId%3D0AfNq00000XKdWrKAL%26retURL%3D%252Fchangemgmt%252FmonitorDeployment.apexp"
+  },
+  "warnings": []
+}

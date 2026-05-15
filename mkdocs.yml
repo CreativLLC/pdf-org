@@ -68,6 +68,17 @@ theme:
 
 # Plugins
 plugins:
+  # awesome-pages: auto-discover every .md in docs/ and build the sidebar from
+  # the directory tree. New object/feature/flow/integration docs written by /sf
+  # runs appear in the sidebar automatically — no manual nav: edits needed.
+  # Per-section ordering (when wanted) goes in a tiny `.pages` file inside the
+  # directory, e.g. `docs/features/.pages`:
+  #   title: Business Features
+  #   nav:
+  #     - renewal-pipeline.md     # pin the most important first
+  #     - "..."                   # everything else, alphabetical
+  # No .pages file = pure alphabetical, which is fine for most engagements.
+  - awesome-pages
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
       # Lunr search; tokenizes camelCase-style names so 'RenewalCalc' finds 'RenewalCalculator'
@@ -96,26 +107,16 @@ markdown_extensions:
       permalink: '¶'
       toc_depth: 3
 
-# Navigation structure (per ADR-0010 taxonomy)
-nav:
-  - Home: index.md
-  - Conventions: CONVENTIONS.md
-  - Architecture:
-      - Index: architecture/README.md
-      # `overview.md` and subsystem docs appended as authored.
-  - Objects:                       # canonical reference layer
-      - Index: objects/README.md
-      # Individual object docs appended by /sf runs that touch them.
-  - Features:                      # derived business-facing layer
-      - Index: features/README.md
-      # Individual feature docs appended by /sf runs.
-  - Flows:
-      - Index: flows/README.md
-  - Integrations:
-      - Index: integrations/README.md
-  - Decisions:
-      - Index: decisions/README.md
-      # ADRs appended as they're authored.
+# Navigation: built automatically by awesome-pages from the docs/ directory
+# tree (per ADR-0010 + ADR-0012). Each subdirectory becomes a section using
+# its README.md (or index.md) as the section landing page. Customize ordering
+# per section by dropping a `.pages` file in that directory — see the example
+# in the plugins block above.
+#
+# Why no explicit `nav:`: with one, MkDocs hides everything not listed.
+# /sf runs write new object/feature/flow docs as they land; an explicit nav
+# means they're orphaned (URLs work, sidebar doesn't link them). See GRIM-49
+# postmortem in ADR-0012.
 
 # Strict mode kept OFF for now — engagement docs grow organically (broken
 # links to stub-only files are normal during early stages). Re-enable once

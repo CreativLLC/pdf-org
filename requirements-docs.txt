@@ -4,3 +4,7 @@
 
 mkdocs-material==9.5.42
 pymdown-extensions==10.11.2
+# Auto-discovers new .md files into the nav as /sf runs land them. With
+# explicit `nav:` blocks, MkDocs hides anything not listed — that broke
+# the doc site for the GRIM-49 run. See ADR-0012.
+mkdocs-awesome-pages-plugin==2.9.3

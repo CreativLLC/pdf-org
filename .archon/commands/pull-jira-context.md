@@ -4,8 +4,10 @@ You are pulling the Jira ticket that drives this workflow run. The ticket is the
 
 ## Inputs
 
-- `$workflow.input.ticket` — the Jira ticket key (e.g., `ACME-101`). Required. Format: `<PROJECT>-<NUMBER>`.
-- `$workflow.input.description` — the engineer's free-form description, if provided. Optional.
+Resolved by Archon from the upstream `extract-jira-key` node (every workflow that uses this command declares one — see `workflows/sf-dispatcher.yaml` and `workflows/sf-apex-change.yaml`):
+
+- `$extract-jira-key.output.ticket` — the Jira ticket key (e.g., `ACME-101`). Required. Format: `<PROJECT>-<NUMBER>`.
+- `$extract-jira-key.output.description` — the engineer's free-form description, if provided. Optional.
 
 ## Tools
 
@@ -22,7 +24,7 @@ Do **not** call `jira_create_issue`, `jira_update_issue`, `jira_add_comment`, or
    ```
    error: invalid ticket key format. Expected like ACME-101.
    ```
-2. **Fetch the ticket** with `jira_get_issue(issue_key=$workflow.input.ticket, fields="summary,description,status,labels,issuetype,assignee,reporter,priority,components,fixVersions,comment,issuelinks,customfield_10000_to_10100")`. The wildcard fields cover most engagement-relevant custom fields; if the engagement's `engagement.yaml` declares additional custom field IDs to read, include those.
+2. **Fetch the ticket** with `jira_get_issue(issue_key=$extract-jira-key.output.ticket, fields="summary,description,status,labels,issuetype,assignee,reporter,priority,components,fixVersions,comment,issuelinks,customfield_10000_to_10100")`. The wildcard fields cover most engagement-relevant custom fields; if the engagement's `engagement.yaml` declares additional custom field IDs to read, include those.
 3. **Check the status is workable.** The ticket's status must match one of the `engagement.yaml: jira.statuses` values that indicate work can start (`ready_for_dev` or `in_progress`). If it's `done`, `in_review`, or any other state, fail with:
    ```
    error: ticket <KEY> is in status "<STATUS>"; expected one of [<workable statuses>]. Refusing to start work.

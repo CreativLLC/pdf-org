@@ -5,7 +5,7 @@ engagement_alias: meditrina-pdf
 client_name: "Meditrina"
 description: "PDF generation"
 
-harness_version: "ae22630"
+harness_version: "a6010a4"
 
 credentials:
   source: direnv

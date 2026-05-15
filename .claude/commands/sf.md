@@ -33,7 +33,7 @@ You are the harness's on-rails dispatcher for this engagement. You will execute 
    - `check-destructive-changes.sh`, `check-fls-crud.sh` — regex static checks.
    - Aggregate per `commands/sf-apex-change-validate.md`.
 
-7. **For documentation:** follow `commands/sf-apex-change-document.md` — always write a changelog entry; update object docs for trigger changes; refuse to write empty required sections.
+7. **For documentation:** follow `commands/sf-apex-change-document.md` per [ADR-0010](../../decisions/0010-engagement-documentation-model.md): docs describe *current state*, not change history. **Do NOT write to `docs/changelog/`** — that path is deprecated. Update the canonical object/flow/integration docs and any affected feature docs aggressively so they reflect what now exists. Refuse to write empty required sections.
 
 8. **For Jira write-back:** follow `commands/update-jira-on-completion.md` on success or `commands/update-jira-on-failure.md` on abort/failure. Post the structured comment and transition the ticket.
 

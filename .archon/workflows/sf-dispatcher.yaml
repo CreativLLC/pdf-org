@@ -29,7 +29,7 @@ nodes:
   # PHASE 1: PARSE ARGS + PULL TICKET
   # ═══════════════════════════════════════════════════════════════
 
-  - id: parse-args
+  - id: extract-jira-key
     prompt: |
       Parse the user's slash-command arguments.
 
@@ -59,7 +59,7 @@ nodes:
 
   - id: pull-jira-context
     command: pull-jira-context
-    depends_on: [parse-args]
+    depends_on: [extract-jira-key]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -90,7 +90,7 @@ nodes:
       $pull-jira-context.output
 
       ### Engineer's description
-      $parse-args.output.description
+      $extract-jira-key.output.description
 
       ## Task
 
@@ -118,7 +118,7 @@ nodes:
          run it. The classifier still picks honestly; the system surfaces
          the gap.
     depends_on: [pull-jira-context]
-    when: "$parse-args.output.override_workflow == ''"
+    when: "$extract-jira-key.output.override_workflow == ''"
     model: haiku
     allowed_tools: []
     context: fresh
@@ -159,7 +159,7 @@ nodes:
 
       ```
       ───────────────────────────────────────────────
-      Ticket:      $parse-args.output.ticket
+      Ticket:      $extract-jira-key.output.ticket
       Title:       $pull-jira-context.output.title
       Status:      $pull-jira-context.output.current_status
 
@@ -183,7 +183,7 @@ nodes:
       ## Workflow choice resolution
 
       Resolve the workflow_name that the gate displays:
-      - If `$parse-args.output.override_workflow` is non-empty, use it.
+      - If `$extract-jira-key.output.override_workflow` is non-empty, use it.
         Set `reasoning` to `"explicit --workflow flag (no classification)"`.
       - Else use `$classify-task-family.output.workflow_name` and its
         `reasoning`.
@@ -206,7 +206,7 @@ nodes:
       - `proceed`: `"true"` if proceeding (with default or override), else `"false"`
       - `chosen_workflow`: the workflow_name that will actually be invoked
       - `reasoning`: a brief audit trail of how this was decided
-    depends_on: [parse-args, pull-jira-context, classify-task-family]
+    depends_on: [extract-jira-key, pull-jira-context, classify-task-family]
     trigger_rule: none_failed_min_one_success
     context: fresh
     output_format:

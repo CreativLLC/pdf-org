@@ -3,26 +3,30 @@
 # harness-update.sh — Phase 6.5 MVP
 #
 # Updates an existing engagement's harness content to a newer harness version.
-# Implements the update half of the ADR-0002 install model. Run from inside an
-# engagement repo that was previously bootstrapped via harness-init.sh.
+# Implements the update half of the ADR-0002 install model per the two-tier
+# refresh policy in ADR-0012. Run from inside an engagement repo that was
+# previously bootstrapped via harness-init.sh.
 #
-# What it overwrites (harness-supplied content; safe to refresh):
+# REFRESH TIER (harness-canon, overwritten on every run) — per ADR-0012:
 #   .archon/workflows/         — workflow YAMLs
 #   .archon/commands/          — command markdown prompts
 #   .archon/scripts/           — validation/utility scripts
 #   .archon/patterns/          — team-canon pattern library
 #   .archon/standards/         — team-canon standards
 #   docs/.harness-templates/   — doc-type templates
+#   .claude/commands/          — slash command markdown (harness IP, not engagement-shaped)
+#   .claude/skills/            — agentic skills (harness IP)
 #
-# What it adds (only if missing; never overwrites):
-#   .claude/commands/<name>.md — Claude Code slash commands from harness templates
-#   .claude/skills/<name>/     — Claude Code agentic skills from harness templates
-#
-# What it touches MINIMALLY:
+# PRESERVE TIER (engagement-shaped, add-only) — per ADR-0012:
 #   engagement.yaml            — only the `harness_version:` line is rewritten;
-#                                everything else (engagement-specific config) preserved
+#                                everything else preserved
+#   mkdocs.yml                 — bootstrapped once; client-branded
+#   requirements-docs.txt      — bootstrapped once
+#   .github/workflows/docs-deploy.yml  — bootstrapped once
+#   docs/index.md              — engagement-authored from a scaffold
+#   docs/features/             — directory created if missing
 #
-# What it leaves ALONE entirely:
+# UNTOUCHED (never read or written):
 #   .envrc, .mcp.json, CLAUDE.md, .gitignore     (engagement-specific or user-edited)
 #   docs/<any-subdir>/<any-file>.md              (engagement-authored docs)
 #   docs/_internal/                              (internal notes, gitignored)
@@ -124,14 +128,16 @@ fi
 section "What this update will do"
 
 cat <<EOF
-  Overwrite (harness-supplied content):
+  Refresh tier — OVERWRITE (harness-canon per ADR-0012):
     .archon/workflows/          .archon/scripts/
     .archon/commands/           .archon/patterns/
     .archon/standards/          docs/.harness-templates/
+    .claude/commands/           .claude/skills/
 
-  Add (only files that don't already exist):
-    .claude/commands/<name>.md
-    .claude/skills/<name>/
+  Preserve tier — ADD only if missing (engagement-shaped per ADR-0012):
+    mkdocs.yml, requirements-docs.txt
+    .github/workflows/docs-deploy.yml
+    docs/index.md, docs/features/
 
   Rewrite ONE line of engagement.yaml:
     harness_version: "$CURRENT_VERSION" → harness_version: "$NEW_VERSION"
@@ -141,6 +147,10 @@ cat <<EOF
     docs/<subdir>/<any-engagement-authored-doc>.md
     docs/_internal/
     force-app/, manifest/, config/, etc. (SFDX content)
+
+  Heads up: if you have hand-edits to .archon/* or .claude/* in this
+  engagement, they will be overwritten. That's the policy in ADR-0012.
+  PR canon changes against the harness repo, not in-engagement.
 EOF
 
 # ─── confirm ───────────────────────────────────────────────────────────
@@ -182,7 +192,7 @@ if [ -d "$HARNESS_DIR/docs-templates" ]; then
   CHANGED=1
 fi
 
-# .claude/commands/  — add new only
+# .claude/commands/  — refresh tier per ADR-0012 (slash commands are harness IP)
 if [ -d "$HARNESS_DIR/claude-templates/commands" ]; then
   mkdir -p "$ENGAGEMENT_DIR/.claude/commands"
   for src in "$HARNESS_DIR/claude-templates/commands/"*.md; do
@@ -190,29 +200,22 @@ if [ -d "$HARNESS_DIR/claude-templates/commands" ]; then
     base=$(basename "$src")
     [ "$base" = "README.md" ] && continue
     dest="$ENGAGEMENT_DIR/.claude/commands/$base"
-    if [ -f "$dest" ]; then
-      info "(kept existing .claude/commands/$base)"
-    else
-      cp "$src" "$dest"
-      ok "Added .claude/commands/$base"
-      CHANGED=1
-    fi
+    cp "$src" "$dest"
+    ok "Refreshed .claude/commands/$base"
+    CHANGED=1
   done
 fi
 
-# .claude/skills/<dir>/  — add new only
+# .claude/skills/<dir>/  — refresh tier per ADR-0012
 if [ -d "$HARNESS_DIR/claude-templates/skills" ]; then
   mkdir -p "$ENGAGEMENT_DIR/.claude/skills"
   for skill_dir in "$HARNESS_DIR/claude-templates/skills/"*/; do
     [ -d "$skill_dir" ] || continue
     skill_name=$(basename "$skill_dir")
-    if [ -d "$ENGAGEMENT_DIR/.claude/skills/$skill_name" ]; then
-      info "(kept existing .claude/skills/$skill_name/)"
-    else
-      cp -R "$skill_dir" "$ENGAGEMENT_DIR/.claude/skills/$skill_name"
-      ok "Added .claude/skills/$skill_name/"
-      CHANGED=1
-    fi
+    rm -rf "$ENGAGEMENT_DIR/.claude/skills/$skill_name"
+    cp -R "$skill_dir" "$ENGAGEMENT_DIR/.claude/skills/$skill_name"
+    ok "Refreshed .claude/skills/$skill_name/"
+    CHANGED=1
   done
 fi
 

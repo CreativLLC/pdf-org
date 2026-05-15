@@ -37,8 +37,12 @@ theme:
   features:
     - navigation.instant         # SPA-like nav, fast page transitions
     - navigation.tracking         # URL updates as you scroll through sections
-    - navigation.sections         # group nav items into sections
     - navigation.indexes          # section index pages (sectionname/index.md)
+    # Note: navigation.sections is intentionally OFF. With it on, top-level
+    # sections render as bold non-clickable headers with all children always
+    # visible — a flat list. Off, they become collapsible groups: click a
+    # section header to expand/collapse its children. Much more usable once
+    # an engagement has 20+ objects/features/flows.
     - navigation.top              # back-to-top button
     - navigation.footer           # prev/next page links at bottom
     - search.suggest              # autocomplete in search box

@@ -388,6 +388,20 @@ nodes:
       $classify-sub-type.output.scope == 'large' ||
       $smoke-validate-claims.output.claims_accurate == 'false'
     context: fresh
+    ui:
+      type: ask-user-question
+      header: "Metadata gate"
+      question: "Confirm pre-execute for {sub_type} on {ticket}?"
+      # Two-tier confirm per ADR-0018 §5:
+      # - delete-* / destructive modify-field / required-on-existing-data → "CONFIRM (destructive)"
+      # - scope=large or inaccurate-claims-only → "Proceed (y)"
+      options:
+        - label: "CONFIRM (destructive metadata change)"
+          description: "Use this for delete-field / delete-validation-rule / delete-picklist-value sub-types, OR a field-becoming-required change on data that already has empty values. Irreversible in production — verify the reference-impact preview matches the plan."
+        - label: "Proceed (additive / scope-only)"
+          description: "Use this when the gate fired only because scope=large or claims_accurate=false on a non-destructive change. The change adds metadata or expands existing definitions — no field data is destroyed."
+        - label: "Abort"
+          description: "Cancel. No deploy; no Jira transition. Run log records the abort."
     output_format:
       type: object
       properties:

@@ -411,6 +411,25 @@ nodes:
       $classify-sub-type.output.scope != 'small' ||
       $smoke-validate-claims.output.claims_accurate != 'true'
     context: fresh
+    ui:
+      type: ask-user-question
+      header: "Permission gate"
+      question: "Confirm pre-execute for {sub_type} on {ticket}?"
+      # Three-tier confirm per ADR-0020 §2. The slash command driver
+      # presents whichever option set matches the actual trigger:
+      # - modify-owd  → "CONFIRM-OWD (org-wide)" is the proceed option
+      # - removes/narrows/delete-* → "CONFIRM (destructive)" is the proceed option
+      # - additive / large-scope / inaccurate-claims → "Proceed (y)" is the proceed option
+      # All three include "Abort" as the safe default.
+      options:
+        - label: "CONFIRM-OWD (org-wide default change)"
+          description: "Use this ONLY for modify-owd sub-type. Confirms an organization-wide default sharing change. Highest blast radius. Cannot be undone via a simple rollback — re-deploying the original OWD often requires a separate org-wide recalculation."
+        - label: "CONFIRM (destructive permission change)"
+          description: "Use this for delete-* sub-types or any change that removes access, narrows sharing, or tightens a restriction rule. Affects users' ability to see/edit data — verify the plan matches the ticket's intent before proceeding."
+        - label: "Proceed (additive / non-destructive)"
+          description: "Use this for additive changes (create-*, additive modify-*), or when the gate fired only because scope=large or claims were inaccurate. The change broadens access or is informational — no users lose permissions."
+        - label: "Abort"
+          description: "Cancel. No metadata changes; no Jira transition. Run log records the abort."
     output_format:
       type: object
       properties:

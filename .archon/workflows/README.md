@@ -23,6 +23,27 @@ Archon DAG YAML files that define how each kind of Salesforce work is performed 
 
 The structure follows Archon's existing patterns — see Archon's own [experimental workflow](https://github.com/coleam00/Archon/tree/main/.archon/workflows/experimental) for a fully-realized example. Our workflows adopt the same DAG node shape (`prompt:`, `bash:`, `command:`, `loop:`, `when:`, `depends_on:`) and add SF-specific gates.
 
+Per [ADR-0024](../decisions/0024-native-claude-code-ux-for-gates.md), interactive gate nodes optionally carry a `ui:` block that pins option labels for native Claude Code rendering:
+
+```yaml
+- id: confirm
+  ui:
+    type: ask-user-question
+    header: "Confirm route"
+    question: "Proceed with {chosen_workflow}?"
+    options:
+      - label: "Proceed"
+        description: "Run as classified"
+      - label: "Override workflow"
+        description: "Choose a different workflow"
+      - label: "Abort"
+        description: "No side effects"
+  prompt: |
+    [existing prompt body — formats the display context]
+```
+
+The slash command driver renders the gate via `AskUserQuestion` using the `ui:` block when present, or auto-derives from `output_format` otherwise. Plan nodes (`id: plan`) are rendered via `ExitPlanMode` regardless of annotation. Gates without a `ui:` block still work — auto-derivation handles `proceed: ["true", "false"]` and `confirmation_form: ["CONFIRM", "y", "n"]` enums out of the box.
+
 ## The orchestrator pattern (ADR-0017)
 
 When a single ticket legitimately spans multiple families (e.g., GRIM-50 adds a custom field AND the Apex trigger that reads it AND the permission set that grants access), `sf-dispatcher` routes to `sf-orchestrator` instead of a single family. The orchestrator:

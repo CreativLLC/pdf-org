@@ -141,6 +141,15 @@ nodes:
     depends_on: [multi-family-plan]
     trigger_rule: none_failed_min_one_success
     context: fresh
+    ui:
+      type: ask-user-question
+      header: "Multi-family"
+      question: "Proceed with cross-family orchestration on {ticket}?"
+      options:
+        - label: "Proceed (all families)"
+          description: "Run families in order: {ordered_families}. Each family's internal gates still fire during execution; you can abort mid-flow at any gate."
+        - label: "Abort"
+          description: "Cancel before any family runs. No side effects. No Jira write-back."
     output_format:
       type: object
       properties:

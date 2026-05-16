@@ -9,6 +9,9 @@ Per [ADR-0010](../decisions/0010-engagement-documentation-model.md): `docs/index
 - `$document-objects.output.objects_written` — paths to all object docs.
 - `$document-flows.output.flows_written` — paths to all flow docs.
 - `$document-integrations.output.integrations_written` — paths to all integration docs.
+- `$document-security-overview.output.files_written` — paths to the consolidated security files (sharing-model.md, custom-permissions.md, etc.). Per ADR-0013.
+- `$document-security-profiles.output.profiles_written` — paths to per-profile docs.
+- `$document-security-permission-sets.output.permission_sets_written` — paths to per-PS docs.
 - `$synthesize-features.output.features_written` — paths to all feature docs.
 - Existing `docs/decisions/*.md` (read for the ADR list; you don't author ADRs here).
 - Existing `docs/index.md` (read to preserve human edits in the Quick Paths section if any).
@@ -39,6 +42,24 @@ Read, Edit, Write, Glob, Grep. Writes only `docs/index.md`.
    - **Flow index** — table rebuilt from `flows_written`. One row per flow. Use the flow doc's Overview's first sentence.
 
    - **Integration index** — table rebuilt from `integrations_written`. One row per system.
+
+   - **Security overview** — REQUIRED per ADR-0013. Single paragraph + 2-line cheat sheet linking to the section:
+
+     ```
+     ## Security
+
+     Auto-generated consolidated view at [`security/`](./security/). Covers
+     Org-Wide Defaults, sharing rules, Apex sharing, Custom Permissions,
+     Public Groups + Queues, profiles, permission sets, and permission set
+     groups. The [`security/sharing-model.md`](./security/sharing-model.md)
+     page is the one-stop summary; per-profile / per-permission-set detail
+     is in the [`profiles/`](./security/profiles/) and
+     [`permission-sets/`](./security/permission-sets/) subdirectories.
+
+     Profile count: N. Permission set count: N. Custom Permissions: N.
+     ```
+
+     Read the security node outputs (`$document-security-profiles.output.profiles_written`, `$document-security-permission-sets.output.permission_sets_written`, etc.) for the counts.
 
    - **Architectural decisions** — list the 3–5 most-impactful ADRs in `docs/decisions/`. If there are more than 5, link to the full directory. Heuristic for "most impactful": most recent active ADRs.
 

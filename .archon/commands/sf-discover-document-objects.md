@@ -76,6 +76,17 @@ For each object in the input list:
 
 Before writing the file, verify your draft has each REQUIRED section header spelled exactly as listed above (matching case, spacing, punctuation). If you find yourself wanting to use `## Schema`, `## Overview`, `## Apex automation`, or `## Related ADRs` — STOP. Those are not the canon section names. Rename before writing.
 
+### Source-file reference formatting (avoid 404s on the rendered site)
+
+When you reference any file *outside* `docs/` — Apex `.cls`/`.trigger` files in `force-app/`, metadata XML, scripts, anything in the engagement repo's source tree — **do NOT write a relative markdown link to it**. The MkDocs Material site publishes only the `docs/` tree; relative paths like `[Foo.cls](../../force-app/main/default/classes/Foo.cls)` resolve to a file that exists on disk but 404s on the rendered site.
+
+Two acceptable forms:
+
+1. **Inline code (preferred for prose).** Just style the filename as code: `` `ContactPhoneNormalizer.cls` `` — no link. Engineers wanting the source open it from VSCode or grep the repo. The doc isn't a navigation tool for source files.
+2. **Absolute GitHub URL (use when the link adds real reader value).** Read `mkdocs.yml` once at the start of your pass; the `repo_url:` field holds `https://github.com/<org>/<repo>`. Construct: `[ContactPhoneNormalizer.cls](<repo_url>/blob/main/force-app/main/default/classes/ContactPhoneNormalizer.cls)`. The link goes to GitHub's file view, which renders Apex source cleanly.
+
+Relative links between docs *inside* `docs/` (object → flow, feature → object, etc.) work normally — that's what MkDocs publishes. The rule above is only for the `force-app/` / `scripts/` / `manifest/` / etc. directories.
+
 5. **Cross-link aggressively.** Use relative markdown links to other docs/objects/, docs/flows/, docs/integrations/ pages, even if those pages don't exist yet (the document-flows / document-integrations nodes will fill them in; cross-links resolve once their pass completes).
 
 ## State, not history (per ADR-0010)

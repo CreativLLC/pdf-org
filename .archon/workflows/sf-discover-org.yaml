@@ -90,11 +90,17 @@ nodes:
       Apex classes referenced:    N
 
       Will write or update:
-        docs/objects/<Object>.md         (N files)
-        docs/flows/<Flow>.md             (N files)
-        docs/integrations/<System>.md    (N files)
-        docs/features/<slug>.md          (after synthesis; usually 3–8)
-        docs/index.md                    (rebuilt)
+        docs/objects/<Object>.md            (N files)
+        docs/flows/<Flow>.md                (N files)
+        docs/integrations/<System>.md       (N files)
+        docs/security/sharing-model.md      (1 file, consolidated)
+        docs/security/custom-permissions.md
+        docs/security/public-groups-and-queues.md
+        docs/security/apex-sharing.md
+        docs/security/profiles/<Profile>.md (N files, per ADR-0013)
+        docs/security/permission-sets/<PS>.md (N files, per ADR-0013)
+        docs/features/<slug>.md             (after synthesis; usually 3–8)
+        docs/index.md                       (rebuilt)
 
       Estimated tokens:  ~<calculated> M (mostly opus[1m] for parallel
                           document-* nodes; sonnet for synthesis/index)
@@ -113,9 +119,13 @@ nodes:
       opus = ~5x). For opus on objects: ~$0.225 per object.
       Flows: ~$0.15 per flow.
       Integrations: ~$0.20 per system.
+      Security overview (sharing-model + custom-perms + groups + apex-sharing + PSG): ~$0.40 flat.
+      Profiles: ~$0.15 per profile (per ADR-0013).
+      Permission sets: ~$0.10 per PS (per ADR-0013).
       Synthesis + index: ~$0.50 flat.
 
-      Estimate = 0.225 * N_objects + 0.15 * N_flows + 0.20 * N_integrations + 0.50
+      Estimate = 0.225 * N_objects + 0.15 * N_flows + 0.20 * N_integrations
+                + 0.40 + 0.15 * N_profiles + 0.10 * N_permission_sets + 0.50
 
       ## Engineer response
 
@@ -164,12 +174,50 @@ nodes:
     model: opus[1m]
 
   # ═══════════════════════════════════════════════════════════════
+  # PHASE 3.5: SECURITY DOCUMENTATION (per ADR-0013)
+  # Three parallel opus[1m] agents document the engagement's security
+  # posture. Run wall-clock-parallel with the document-objects/flows/
+  # integrations nodes above; together six nodes fan out from
+  # confirm-cost.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document-security-overview
+    command: sf-discover-document-security-overview
+    depends_on: [confirm-cost]
+    when: "$confirm-cost.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  - id: document-security-profiles
+    command: sf-discover-document-profiles
+    depends_on: [confirm-cost]
+    when: "$confirm-cost.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  - id: document-security-permission-sets
+    command: sf-discover-document-permission-sets
+    depends_on: [confirm-cost]
+    when: "$confirm-cost.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
   # PHASE 4: SYNTHESIZE FEATURES + UPDATE INDEX
+  # Synthesis reads ALL category docs (objects/flows/integrations +
+  # security/*) before clustering into business features. Update-index
+  # rebuilds the master index with the security section included.
   # ═══════════════════════════════════════════════════════════════
 
   - id: synthesize-features
     command: sf-discover-synthesize-features
-    depends_on: [document-objects, document-flows, document-integrations]
+    depends_on:
+      - document-objects
+      - document-flows
+      - document-integrations
+      - document-security-overview
+      - document-security-profiles
+      - document-security-permission-sets
     trigger_rule: all_success
     context: fresh
     model: sonnet
@@ -192,10 +240,12 @@ nodes:
       N_FLOWS=$(ls docs/flows/*.md 2>/dev/null | grep -v README.md | wc -l)
       N_INTEGRATIONS=$(ls docs/integrations/*.md 2>/dev/null | grep -v README.md | wc -l)
       N_FEATURES=$(ls docs/features/*.md 2>/dev/null | grep -v README.md | wc -l)
+      N_PROFILES=$(ls docs/security/profiles/*.md 2>/dev/null | grep -v README.md | wc -l)
+      N_PSETS=$(ls docs/security/permission-sets/*.md 2>/dev/null | grep -v README.md | wc -l)
 
       RUN_LOG="_internal/harness-runs.log"
       mkdir -p "$(dirname "$RUN_LOG")"
-      printf '%s  -  sf-discover-org  objects=%d  flows=%d  integrations=%d  features=%d  result=success\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${N_OBJECTS}" "${N_FLOWS}" "${N_INTEGRATIONS}" "${N_FEATURES}" \
+      printf '%s  -  sf-discover-org  objects=%d  flows=%d  integrations=%d  features=%d  profiles=%d  psets=%d  result=success\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${N_OBJECTS}" "${N_FLOWS}" "${N_INTEGRATIONS}" "${N_FEATURES}" "${N_PROFILES}" "${N_PSETS}" \
         >> "$RUN_LOG"
     depends_on: [update-index]

@@ -77,6 +77,13 @@ Concretely:
 
 8. **Do NOT modify team-canon patterns or standards.** `.archon/patterns/` and `.archon/standards/` are read-only in the engagement repo (copied content per ADR-0002). If the workflow exposed a gap in team canon, record it in `$ARTIFACTS_DIR/follow-ups.md` for a separate PR against the harness repo.
 
+8a. **Source-file reference formatting (avoid 404s on the rendered site).** When you reference any file *outside* `docs/` from inside an engagement doc — Apex `.cls`/`.trigger` files in `force-app/`, metadata XML, scripts — **do NOT write a relative markdown link to it**. The MkDocs Material site publishes only the `docs/` tree; a link like `[Foo.cls](../../force-app/main/default/classes/Foo.cls)` resolves to a file that exists on disk but 404s on the rendered site. Two acceptable forms:
+
+   1. **Inline code, no link** (preferred for prose): `` `ContactPhoneNormalizer.cls` ``.
+   2. **Absolute GitHub URL** (when the link adds real reader value): read `mkdocs.yml` once to get `repo_url:`, then write `[ContactPhoneNormalizer.cls](<repo_url>/blob/main/force-app/main/default/classes/ContactPhoneNormalizer.cls)`.
+
+   Relative links between docs *inside* `docs/` (object → flow, feature → object, etc.) work normally — the rule above is only for paths leaving the docs tree.
+
 9. **Frontmatter rules** for every doc you write or update:
    - `last_updated`: today's date (YYYY-MM-DD).
    - `last_updated_by`: `archon-run-<run-id>` if `$ARCHON_RUN_ID` is set; else the engineer's `git config user.email`.

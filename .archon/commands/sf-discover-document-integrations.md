@@ -70,6 +70,10 @@ For each external system in the inventory:
 
 Before writing the file, verify your draft has each REQUIRED section header spelled exactly as listed above. If you find yourself wanting to use `## Overview`, `## Auth`, `## API surface`, `## Apex layer`, or `## Failure modes` (without "and runbook") — STOP. Those are not the canon section names. Rename before writing.
 
+### Source-file reference formatting (avoid 404s on the rendered site)
+
+For any reference to files outside `docs/` (Apex callout classes, Named Credential XML, Connected App XML, Platform Event definitions): do NOT write relative markdown links — they 404 on the rendered MkDocs site, which only publishes `docs/`. Either format the filename as inline code (`` `StripeBillingService.cls` ``) with no link, or construct an absolute GitHub URL using `mkdocs.yml: repo_url:` + `/blob/main/<path>`. Same rule as `sf-discover-document-objects.md`. Relative links between docs *inside* `docs/` work normally.
+
 3. **Cross-link aggressively.** Object docs (relative paths). Other integration docs if relevant (cross-vendor flows). Note the cross-links even if target docs don't exist yet.
 
 ## State, not history

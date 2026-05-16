@@ -215,12 +215,42 @@ def is_skippable_target(target: str) -> bool:
 
 
 def resolve_and_check(md_path: Path, target: str, docs_root: Path) -> tuple:
-    """Return (resolved_path, exists_bool, reason_str)."""
+    """Return (resolved_path, exists_bool, reason_str).
+
+    Three outcomes for a relative link:
+      - resolves to a file inside docs/ that exists      → valid
+      - resolves to a file inside docs/ that's missing   → broken (missing target)
+      - resolves to a path OUTSIDE docs/                 → broken (out-of-site)
+        regardless of whether the file exists on disk: MkDocs only publishes
+        docs/, so a link to force-app/ / scripts/ / etc. will 404 on the
+        rendered site. Use inline code or an absolute GitHub URL instead.
+    """
     # Absolute path inside the engagement (rare in docs)
     if target.startswith("/"):
         candidate = (docs_root.parent / target.lstrip("/")).resolve()
     else:
         candidate = (md_path.parent / target).resolve()
+
+    # Is the resolved path inside docs/? If not, the link won't work on the
+    # rendered site — flag it as out-of-site even if the file exists on disk.
+    try:
+        candidate.relative_to(docs_root)
+        inside_docs = True
+    except ValueError:
+        inside_docs = False
+
+    if not inside_docs:
+        if candidate.exists():
+            reason = (
+                "out-of-site: target lives outside docs/, won't resolve on the "
+                "rendered MkDocs site. Use inline code or an absolute GitHub URL."
+            )
+        else:
+            reason = (
+                "out-of-site + missing: target is outside docs/ AND doesn't exist."
+            )
+        return (candidate, False, reason)
+
     return (candidate, candidate.exists(), None if candidate.exists() else "missing")
 
 

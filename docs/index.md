@@ -100,6 +100,12 @@ Derived business-facing layer (one doc per cross-cutting feature). 6 features do
 
 *No external integrations (named credentials, connected apps, REST classes, or HTTP callouts) are present in this engagement's source.*
 
+## Security
+
+Auto-generated consolidated view at [`security/`](./security/). Covers Org-Wide Defaults, sharing rules, Apex sharing, Custom Permissions, Public Groups + Queues, profiles, permission sets, and permission set groups. The [`security/sharing-model.md`](./security/sharing-model.md) page is the one-stop summary; per-profile / per-permission-set detail is in the [`profiles/`](./security/profiles/) and [`permission-sets/`](./security/permission-sets/) subdirectories.
+
+Profile count: 25. Permission set count: 7. Custom Permissions: 0. Sharing rules with content: 1 (`Account.Share_with_Internal_Users`). Permission set groups: 2 (both `force__` namespace).
+
 ## Architectural decisions
 
 ADRs that record long-lived rationale for this engagement.

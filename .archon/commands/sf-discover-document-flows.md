@@ -63,6 +63,10 @@ For each Flow in the input list:
 
 Before writing the file, verify your draft has each REQUIRED section header spelled exactly as listed above. If you find yourself wanting to use `## Overview`, `## Trigger`, `## Behavior`, `## DML performed`, `## Decision points`, `## Failure handling`, or `## Invokes` — STOP. Those are not the canon section names. Rename before writing.
 
+### Source-file reference formatting (avoid 404s on the rendered site)
+
+For any reference to files outside `docs/` (Apex classes, `.flow-meta.xml` source, metadata files): do NOT write relative markdown links — they 404 on the rendered MkDocs site, which only publishes `docs/`. Either format the filename as inline code (`` `Foo.cls` ``) with no link, or construct an absolute GitHub URL using `mkdocs.yml: repo_url:` + `/blob/main/<path>`. Same rule as `sf-discover-document-objects.md`; same reasoning. Relative links between docs *inside* `docs/` work normally.
+
 4. **Cross-link aggressively.** Object docs, integration docs, sub-flow docs. Use relative paths even if the target doesn't exist yet — the other category nodes will create them.
 
 ## State, not history

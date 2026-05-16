@@ -1,0 +1,72 @@
+---
+title: "View_Invoices"
+audience: public
+last_updated: 2026-05-15
+last_updated_by: archon-discover
+related_tickets: []
+related_docs:
+  - README.md
+  - ../sharing-model.md
+---
+
+# `View_Invoices`
+
+## Identity
+
+| | |
+|---|---|
+| **API name** | `View_Invoices` |
+| **Label** | View Invoices |
+| **License** | Customer Portal Manager Custom |
+| **PSG membership** | _Not a member of any Permission Set Group._ |
+| **Origin** | Engagement-authored |
+| **Description** | _Not set._ |
+| **Activation required** | No |
+
+## Purpose
+
+Read-only view of `Invoice__c` for users who don't otherwise have invoice access. _(inferred from naming)_
+
+## Object permissions added
+
+_No object permissions added._
+
+## Field-level security added
+
+_No field-level security added._
+
+## App access added
+
+_No app access added._
+
+## Tab settings overrides
+
+_No tab settings overrides._
+
+## System permissions added
+
+_No system permissions added._
+
+## Custom Permissions granted
+
+_No Custom Permissions granted._
+
+## Apex class access added
+
+_No Apex class access added._
+
+## Visualforce page access added
+
+_No Visualforce page access added._
+
+## Connected App access added
+
+_No Connected App access added._
+
+## Typical assignment pattern
+
+_Assignment pattern not documented; check Setup or the engagement's onboarding runbook._
+
+## Related decisions
+
+_None._

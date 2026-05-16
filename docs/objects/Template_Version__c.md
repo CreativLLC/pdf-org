@@ -1,8 +1,8 @@
 ---
 title: "Template_Version__c"
 audience: public
-last_updated: 2026-05-14
-last_updated_by: archon-discover
+last_updated: 2026-05-15
+last_updated_by: drew.smith@openwacca.com
 related_tickets: []
 related_docs:
   - Document_Template__c.md

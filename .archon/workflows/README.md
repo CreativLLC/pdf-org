@@ -4,14 +4,15 @@ Archon DAG YAML files that define how each kind of Salesforce work is performed 
 
 > **What goes here?** YAML files matching the conventions in [`../decisions/0003-workflow-yaml-scope-and-naming.md`](../decisions/0003-workflow-yaml-scope-and-naming.md). Each YAML defines a coarse task family and uses internal classification branches for variation. The structural backbone (pull Jira → classify → smoke-validate → verify org → load context → plan → gate → execute → validate → document → update Jira → log) is required.
 
-## Planned workflow set (per [ADR-0003](../decisions/0003-workflow-yaml-scope-and-naming.md))
+## Workflow set (per [ADR-0003](../decisions/0003-workflow-yaml-scope-and-naming.md))
 
-| Workflow | Covers | Phase |
+| Workflow | Covers | Status |
 |---|---|---|
-| `sf-dispatcher.yaml` | The `/sf` entry point: pulls Jira, classifies, presents confirmation, invokes the matching workflow | Phase 4 |
-| `sf-apex-change.yaml` | Create / modify / extend / delete Apex classes, triggers, test classes | **Phase 4 (first)** |
-| `sf-metadata-change.yaml` | Custom objects, fields, validation rules, page layouts, picklists | Phase 7+ |
+| [`sf-dispatcher.yaml`](./sf-dispatcher.yaml) | The `/sf` entry point: pulls Jira context (incl. parent epic + sub-tasks per ADR-0011), external context per [ADR-0015](../decisions/0015-external-context-from-tickets.md), classifies, presents confirmation, invokes the matching task-family workflow | ✅ Shipped |
+| [`sf-apex-change.yaml`](./sf-apex-change.yaml) | Create / modify / extend / delete / rename Apex classes, triggers, test classes — per [ADR-0009](../decisions/0009-sf-apex-change-scope-and-gates.md) | ✅ Shipped |
+| [`sf-discover-org.yaml`](./sf-discover-org.yaml) | One-time-per-engagement baseline doc generation from existing SFDX metadata — six parallel `opus[1m]` nodes (objects / flows / integrations / security overview / profiles / permission sets) per [ADR-0011](../decisions/0011-sf-discover-org-workflow.md) + [ADR-0013](../decisions/0013-engagement-security-documentation.md) | ✅ Shipped |
 | `sf-flow-change.yaml` | Record-triggered Flows, scheduled Flows, screen Flows, subflows | Phase 7+ |
+| `sf-metadata-change.yaml` | Custom objects, fields, validation rules, page layouts, picklists | Phase 7+ |
 | `sf-lwc-change.yaml` | Lightning Web Components and their backing Apex | Phase 7+ |
 | `sf-integration-change.yaml` | External integrations: callouts, webhooks, named credentials, platform events | Phase 7+ |
 | `sf-permission-change.yaml` | Permission sets, profiles, sharing rules, OWD changes | Phase 7+ |

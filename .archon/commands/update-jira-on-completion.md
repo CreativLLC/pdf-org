@@ -4,13 +4,26 @@ You are posting the success-path Jira update for a completed workflow run. The v
 
 ## Inputs
 
+This command is invoked in two contexts:
+
+### Single-family context (when called from a task-family workflow directly)
+
 - `$extract-jira-key.output.ticket` — the Jira key
 - `$classify-sub-type.output` — sub_type, scope
 - `$plan.output` — plan summary
 - `$execute.output` — files actually changed
 - `$validate.output` — test results, coverage
 - `$document.output` — doc paths written/updated
-- `engagement.yaml: jira.statuses` — workflow status names for this engagement
+- `engagement.yaml: jira.statuses` — workflow status names
+
+### Orchestrator context (when called from sf-orchestrator per ADR-0017)
+
+- `$extract-jira-key.output.ticket` — the Jira key
+- `$invoke-families-in-sequence.output.orchestrator_run_id` — the run-id directory containing each family's family_result.json
+- `$invoke-families-in-sequence.output.overall_result` — `success` (all families completed) or `failure` (one family failed; partial completion)
+- The family_result.json files in `_internal/orchestrator-runs/<run-id>/` — one per family that ran. Read each to render the multi-family comment.
+
+You detect the orchestrator context by the presence of `$invoke-families-in-sequence.output.orchestrator_run_id`. If absent, you're in single-family context.
 
 ## Tools
 
@@ -25,7 +38,9 @@ Do **not** call `jira_update_issue` here.
 
 ## Task
 
-1. **Build the structured comment.** Format as Atlassian Document Format (ADF) or markdown — sooperset/mcp-atlassian accepts both; markdown is simpler and renders well in Jira Cloud. Template:
+1. **Build the structured comment.** Format as Atlassian Document Format (ADF) or markdown — sooperset/mcp-atlassian accepts both; markdown is simpler and renders well in Jira Cloud. Choose the template based on context:
+
+### Single-family template (most runs)
 
    ```markdown
    ## Harness workflow run — success
@@ -57,6 +72,90 @@ Do **not** call `jira_update_issue` here.
    Review the working tree, commit the change with a message referencing this ticket
    (e.g., `<TICKET>: <one-line summary>`), and push the feature branch. The PR
    description should link back to this ticket.
+   ```
+
+### Multi-family template (per ADR-0017, when invoked by sf-orchestrator)
+
+When `$invoke-families-in-sequence.output.orchestrator_run_id` is present, you're rendering the consolidated comment for an orchestrator run. Read each `_internal/orchestrator-runs/<run-id>/<family>.json` to populate the per-family sections.
+
+   ```markdown
+   ## Harness orchestrator run — <success | partial-success | failure>
+
+   **Workflow:** sf-orchestrator
+   **Families (in execution order):** sf-metadata-change → sf-apex-change → sf-permission-change
+   **Run ID:** <orchestrator_run_id>
+   **Engineer:** <git user.email>
+
+   ---
+
+   ### Family 1 of 3 — sf-metadata-change ✅
+   *(Sub-type: create-field · Scope: small)*
+
+   **Files changed:**
+   - `force-app/main/default/objects/Account/fields/Revenue_Tier__c.field-meta.xml` (added, +28 lines)
+
+   **Validation:** Deploy ✅ · FLS/CRUD ✅
+
+   **Doc updates:**
+   - `docs/objects/Account.md` (Key fields table + Sharing section)
+
+   ---
+
+   ### Family 2 of 3 — sf-apex-change ✅
+   *(Sub-type: modify-class · Scope: small)*
+
+   **Files changed:**
+   - `force-app/main/default/classes/AccountTriggerHandler.cls` (modified, +14/-2)
+   - `force-app/main/default/classes/AccountTriggerHandler_Test.cls` (modified, +35/-0)
+
+   **Validation:** Deploy ✅ · Tests ✅ (12/12, 92% coverage) · FLS/CRUD ✅ · Destructive ✅
+
+   **Doc updates:**
+   - `docs/objects/Account.md` (Apex automation section updated)
+   - `docs/features/account-management.md` (How it works step 3 updated)
+
+   ---
+
+   ### Family 3 of 3 — sf-permission-change ✅
+   *(Sub-type: modify-permission-set · Scope: small)*
+
+   **Files changed:**
+   - `force-app/main/default/permissionsets/Sales_Manager_PS.permissionset-meta.xml` (modified, +4/-0)
+
+   **Validation:** Deploy ✅ · No-access-removed ✅
+
+   **Doc updates:**
+   - `docs/security/permission-sets/Sales_Manager_PS.md` (FLS section updated)
+   - `docs/security/sharing-model.md` (Custom Permissions map updated)
+
+   ---
+
+   ### Next step for the engineer
+
+   Review the working tree (`git diff`), commit all family changes as one
+   atomic commit referencing this ticket (e.g., `<TICKET>: <one-line summary>`),
+   and push the feature branch. The PR description should link back to this
+   ticket. Each family's individual files were modified by its respective
+   workflow; the orchestrator did not commit on your behalf.
+   ```
+
+   **Partial-success variant** (when `overall_result == 'failure'` mid-run): replace the "Next step" section with:
+
+   ```markdown
+   ### ⚠️ Run did not complete — Family <N> failed
+
+   **Family that failed:** sf-<X>-change
+   **Reason:** <failed_reason from invoke-families-in-sequence>
+
+   **Completed families left their files in the working tree.** Review the
+   diff: you can keep what completed, fix the issue that broke family <N>,
+   and re-run `/sf <TICKET>` (which will re-orchestrate from family 1 — each
+   family is idempotent), OR `git restore` the incomplete state and re-plan.
+
+   **Skipped families:** <N+1..end>
+   ```
+
+When the engineer re-runs after a partial-success failure, the orchestrator runs the full family sequence again. Each family's workflow is idempotent (re-running on a successful change is a no-op), so this is safe.
    ```
 
 2. **Post the comment.** `jira_add_comment(issue_key="<TICKET>", body="<the markdown above>")`. Capture the comment id for the output payload.

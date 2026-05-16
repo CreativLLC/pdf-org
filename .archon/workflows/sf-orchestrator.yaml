@@ -1,0 +1,343 @@
+name: sf-orchestrator
+description: |
+  Multi-family ticket orchestrator per [ADR-0017](../decisions/0017-multi-family-orchestrator.md).
+  Invoked by sf-dispatcher when the classifier returns more than one
+  task family (e.g., "add a custom field AND the Apex that uses it"
+  spans sf-metadata-change + sf-apex-change).
+
+  Runs each family workflow in dependency order with `orchestrated: true`
+  (which suppresses each family's own Jira write-back). Collects
+  family_result JSON from each. Posts ONE consolidated Jira comment at
+  the end. Emits an aggregate cost-log entry plus the per-family entries
+  the families emit themselves.
+
+  Cap: 4 families per ticket. 5+ → classifier instructs the engineer
+  to split the ticket.
+
+  Default sequencing order (override-able via the multi-family-plan
+  prompt): sf-metadata-change → sf-flow-change → sf-apex-change →
+  sf-lwc-change → sf-integration-change → sf-permission-change →
+  sf-data-correction.
+
+  Inputs:
+    $ARGUMENTS — passed by sf-dispatcher's invoke-workflow bash node:
+                 `<TICKET-KEY> --families <family1>,<family2>,...
+                                "<description>"`
+
+provider: claude
+model: sonnet
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH TICKET (same shape as sf-apex-change)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: extract-jira-key
+    prompt: |
+      Extract the Jira ticket key + the comma-separated families list
+      + the free-form description from $ARGUMENTS.
+
+      Input: $ARGUMENTS — format:
+        `<TICKET-KEY> --families <family1>,<family2>,... "<description>"`
+
+      Examples:
+        `GRIM-100 --families sf-metadata-change,sf-apex-change "Add Revenue_Tier__c"`
+        `GRIM-101 --families sf-lwc-change,sf-apex-change,sf-permission-change "Build admin UI"`
+
+      Rules:
+      - TICKET-KEY must match `^[A-Z][A-Z0-9]+-\d+$`. If not: fail with
+        `error: missing or invalid ticket key in orchestrator input`.
+      - `--families` is required for orchestrator runs. Parse the
+        comma-separated list. Each family must be one of:
+        sf-metadata-change, sf-flow-change, sf-apex-change,
+        sf-lwc-change, sf-integration-change, sf-permission-change,
+        sf-data-correction.
+      - Length must be 2-4. If 1 family, dispatcher should have invoked
+        that family directly, not the orchestrator — fail.
+      - If 5+ families, fail with: `error: orchestrator cap is 4 families
+        per ticket. Split this ticket into multiple Jira items.`
+
+      Output ONLY structured JSON.
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        families:
+          type: array
+          items:
+            type: string
+            enum:
+              - sf-metadata-change
+              - sf-flow-change
+              - sf-apex-change
+              - sf-lwc-change
+              - sf-integration-change
+              - sf-permission-change
+              - sf-data-correction
+        description:
+          type: string
+      required: [ticket, families, description]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [extract-jira-key]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: PLAN — sequence families in dependency order, estimate cost
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: multi-family-plan
+    command: sf-orchestrator-multi-family-plan
+    depends_on: [pull-jira-context]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: CONFIRM (one top-level gate per ADR-0017)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: confirm-orchestrator-plan
+    prompt: |
+      You are the orchestrator's top-level confirmation gate per ADR-0017.
+
+      ## Display
+
+      Show the engineer the consolidated execution plan:
+
+      ```
+      ───────────────────────────────────────────────
+      sf-orchestrator plan for $extract-jira-key.output.ticket
+
+      Title: $pull-jira-context.output.title
+      Families (in execution order): $multi-family-plan.output.ordered_families
+      Estimated cost: $multi-family-plan.output.total_estimated_cost
+      Estimated wall-clock: $multi-family-plan.output.estimated_duration_seconds seconds
+
+      Each family's internal gates (pre-execute, post-validate,
+      destructive-CONFIRM) will still fire as needed during execution.
+      You can abort the orchestrator mid-flow at any of those.
+
+      What each family will do:
+      $multi-family-plan.output.per_family_summaries
+      ───────────────────────────────────────────────
+
+        Proceed? [y/N]
+      ```
+
+      ## Engineer response
+
+      Acceptable replies:
+        - `y` / `yes`                → proceed
+        - `n` / `no` / empty         → abort cleanly (no families run)
+
+      No CONFIRM-required form here. Each family's internal destructive
+      gates handle the strict-CONFIRM case for their own destructive
+      operations.
+
+      Emit structured JSON: `proceed`, `reasoning`.
+    depends_on: [multi-family-plan]
+    trigger_rule: none_failed_min_one_success
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        reasoning:
+          type: string
+      required: [proceed, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: INVOKE FAMILIES IN SEQUENCE
+  # One bash node iterates the ordered families list, invoking each
+  # family workflow with `orchestrated: true`. Collects each family's
+  # family_result JSON. Stops on first failure.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: invoke-families-in-sequence
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      DESCRIPTION="$ARGUMENTS"
+
+      # Orchestrator run ID — used as a sub-directory under
+      # _internal/orchestrator-runs/ so each family's family_result.json
+      # can be collected without collision.
+      ORCHESTRATOR_RUN_ID="orch-$(date -u +%Y-%m-%dT%H-%M-%SZ)-${TICKET}"
+      ORCHESTRATOR_DIR="_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}"
+      mkdir -p "$ORCHESTRATOR_DIR"
+      export ORCHESTRATOR_RUN_ID
+
+      # Parse the ordered families from the plan node's output. The
+      # `$multi-family-plan.output.ordered_families` token is a JSON
+      # array; we splat it into a bash array.
+      ORDERED_FAMILIES_JSON='$multi-family-plan.output.ordered_families'
+      FAMILIES=($(printf '%s' "$ORDERED_FAMILIES_JSON" | python3 -c '
+      import json, sys
+      data = json.load(sys.stdin)
+      for f in data:
+          print(f)
+      '))
+
+      echo "→ Orchestrator run ${ORCHESTRATOR_RUN_ID}"
+      echo "→ Families: ${FAMILIES[*]}"
+
+      OVERALL_RESULT="success"
+      COMPLETED_FAMILIES=()
+      FAILED_FAMILY=""
+      FAILED_REASON=""
+
+      for family in "${FAMILIES[@]}"; do
+        echo ""
+        echo "═══════════════════════════════════════════════"
+        echo "→ Invoking ${family} (orchestrated)"
+        echo "═══════════════════════════════════════════════"
+
+        # Family workflow MUST satisfy the contract from ADR-0017: accept
+        # an --orchestrated flag and write its family_result JSON to
+        # $ORCHESTRATOR_DIR/<family>.json instead of doing Jira write-back.
+        WORKFLOW_FILE=".archon/workflows/${family}.yaml"
+        if [ ! -f "$WORKFLOW_FILE" ]; then
+          echo "  ✗ workflow ${family} not found at $WORKFLOW_FILE" >&2
+          OVERALL_RESULT="failure"
+          FAILED_FAMILY="$family"
+          FAILED_REASON="workflow YAML not found — is the engagement on the latest harness?"
+          break
+        fi
+
+        # Invoke. The family's own log-workflow-run node writes the
+        # family_result.json into $ORCHESTRATOR_DIR (it reads
+        # $ORCHESTRATOR_RUN_ID from the env we exported above).
+        if ! archon workflow run "${family}" "${TICKET} --orchestrated true \"${DESCRIPTION}\""; then
+          OVERALL_RESULT="failure"
+          FAILED_FAMILY="$family"
+          FAILED_REASON="archon workflow run exited non-zero"
+          break
+        fi
+
+        # Verify the family wrote its result file.
+        RESULT_FILE="$ORCHESTRATOR_DIR/${family}.json"
+        if [ ! -f "$RESULT_FILE" ]; then
+          echo "  ⚠ ${family} completed but did not write $RESULT_FILE" >&2
+          OVERALL_RESULT="failure"
+          FAILED_FAMILY="$family"
+          FAILED_REASON="family workflow did not emit family_result.json (contract violation; check $family.yaml's log-workflow-run node)"
+          break
+        fi
+
+        # Check the family's own status field (success / failure / gate-aborted)
+        FAMILY_STATUS=$(python3 -c "import json; print(json.load(open('$RESULT_FILE')).get('status', 'unknown'))")
+        if [ "$FAMILY_STATUS" != "success" ]; then
+          OVERALL_RESULT="failure"
+          FAILED_FAMILY="$family"
+          FAILED_REASON="family reported status=${FAMILY_STATUS}"
+          break
+        fi
+
+        COMPLETED_FAMILIES+=("$family")
+        echo "  ✓ ${family} completed successfully"
+      done
+
+      # Emit the orchestrator's aggregated result for downstream nodes.
+      ORCHESTRATOR_RESULT_FILE="$ORCHESTRATOR_DIR/orchestrator_result.json"
+      python3 <<PYEOF
+      import json
+      result = {
+          "orchestrator_run_id": "$ORCHESTRATOR_RUN_ID",
+          "ticket": "$TICKET",
+          "overall_result": "$OVERALL_RESULT",
+          "completed_families": "${COMPLETED_FAMILIES[*]}".split(),
+          "failed_family": "$FAILED_FAMILY" or None,
+          "failed_reason": "$FAILED_REASON" or None,
+          "family_results": {},
+      }
+      import os
+      for f in os.listdir("$ORCHESTRATOR_DIR"):
+          if f.endswith(".json") and f != "orchestrator_result.json":
+              fam = f[:-5]
+              with open(os.path.join("$ORCHESTRATOR_DIR", f)) as fh:
+                  result["family_results"][fam] = json.load(fh)
+      with open("$ORCHESTRATOR_RESULT_FILE", "w") as out:
+          json.dump(result, out, indent=2)
+      PYEOF
+
+      echo ""
+      echo "═══════════════════════════════════════════════"
+      echo "Orchestrator run complete: $OVERALL_RESULT"
+      echo "  Completed: ${COMPLETED_FAMILIES[*]:-(none)}"
+      [ -n "$FAILED_FAMILY" ] && echo "  Failed:    $FAILED_FAMILY ($FAILED_REASON)"
+      echo "═══════════════════════════════════════════════"
+
+      # Surface for downstream nodes via stdout (Archon parses)
+      echo "overall_result: $OVERALL_RESULT"
+      echo "orchestrator_run_id: $ORCHESTRATOR_RUN_ID"
+    depends_on: [confirm-orchestrator-plan]
+    when: "$confirm-orchestrator-plan.output.proceed == 'true'"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: AGGREGATED JIRA WRITE-BACK
+  # ONE consolidated comment (success or partial-success) per ADR-0017.
+  # Reuses update-jira-on-completion with the family_results bundle.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: update-jira-on-completion
+    command: update-jira-on-completion
+    depends_on: [invoke-families-in-sequence]
+    when: "$confirm-orchestrator-plan.output.proceed == 'true'"
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: LOG (always — proceed or abort)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-orchestrator-run
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      DECISION="$confirm-orchestrator-plan.output.proceed"
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+
+      if [ "$DECISION" = "false" ]; then
+        printf '%s  %s  sf-orchestrator  result=aborted-at-gate\n' \
+          "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" >> "$RUN_LOG"
+
+        # Even on abort, emit a minimal cost-log entry so the abort run
+        # appears in cost reports
+        COST_LOG="_internal/cost-log.jsonl"
+        printf '{"ts":"%s","workflow":"sf-orchestrator","ticket":"%s","engagement":"%s","harness_version":"%s","nodes":{"sonnet":4,"bash":1},"est_input_tokens":40000,"est_output_tokens":5000,"est_cost_usd":0.20,"result":"aborted-at-gate"}\n' \
+          "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
+          >> "$COST_LOG"
+        exit 0
+      fi
+
+      OVERALL_RESULT="$invoke-families-in-sequence.output.overall_result"
+      ORCHESTRATOR_RUN_ID="$invoke-families-in-sequence.output.orchestrator_run_id"
+
+      # Aggregate the families count + the families that ran
+      FAMILIES_COUNT=$(ls "_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}/"*.json 2>/dev/null | grep -v orchestrator_result.json | wc -l)
+
+      printf '%s  %s  sf-orchestrator  families=%d  result=%s  run_id=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${FAMILIES_COUNT}" "${OVERALL_RESULT}" "${ORCHESTRATOR_RUN_ID}" \
+        >> "$RUN_LOG"
+
+      # Aggregate cost-log entry per ADR-0016. The per-family entries
+      # are already in cost-log.jsonl from each family's own
+      # log-workflow-run node. This adds a top-level orchestrator row
+      # with orchestrator_overhead (~$0.20 typical) so cost-summary can
+      # group "sf-orchestrator runs" separately.
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{"ts":"%s","workflow":"sf-orchestrator","ticket":"%s","engagement":"%s","harness_version":"%s","nodes":{"sonnet":4,"bash":2},"est_input_tokens":50000,"est_output_tokens":7000,"est_cost_usd":0.25,"result":"%s","orchestrator_run_id":"%s","families_count":%d,"orchestrator_overhead":true}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" "${OVERALL_RESULT}" "${ORCHESTRATOR_RUN_ID}" "${FAMILIES_COUNT}" \
+        >> "$COST_LOG"
+    depends_on: [invoke-families-in-sequence, confirm-orchestrator-plan]
+    trigger_rule: none_failed_min_one_success

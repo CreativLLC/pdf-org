@@ -165,29 +165,44 @@ nodes:
 
       ## Task
 
-      1. Identify the PRIMARY artifact the ticket asks to change. If the
-         ticket spans multiple artifact types (e.g., "add a field and the
-         Apex that consumes it"), pick the workflow whose artifact carries
-         the change's business logic — not the supporting metadata.
+      1. Identify which artifact types the ticket asks to change. List
+         every task family that's clearly required to complete the
+         ticket's acceptance criteria. **A ticket can span multiple
+         families** (per [ADR-0017](../decisions/0017-multi-family-orchestrator.md)) —
+         e.g., "add a custom field AND the Apex that uses it" spans
+         `sf-metadata-change` + `sf-apex-change`. Don't artificially pick
+         one when multiple are clearly needed.
 
-      2. Output `workflow_name` (one of the enum), `scope` (small / medium /
-         large per ADR-0003), and a one-paragraph `reasoning`.
+      2. Output:
+         - `families` (array, 1-4 entries) — every family required.
+           For single-family tickets, this is a one-element array.
+         - `workflow_name` (single string) — convenience field equal to
+           `families[0]` for backward-compat, OR `"sf-orchestrator"` if
+           `families.length >= 2`.
+         - `scope` (small / medium / large per ADR-0003) — aggregate
+           scope across families.
+         - `reasoning` — one paragraph explaining the classification.
 
-      3. The ticket may carry a `task-type:<workflow-name>` label, extracted
-         by `pull-jira-context` as `task_type_label`. Treat it as a strong
-         prior — override only with explicit reasoning that names a misfit,
-         and surface the disagreement in your `reasoning` so the confirm
-         gate displays it.
+      3. The ticket may carry a `task-type:<family>` label, extracted by
+         `pull-jira-context` as `task_type_label`. Treat it as a strong
+         prior for the FIRST family — override only with explicit
+         reasoning that names a misfit, and surface the disagreement in
+         `reasoning` so the confirm gate displays it. (Tickets that span
+         multiple families may carry one `task-type:` label naming the
+         primary family; additional families are inferred from the AC.)
 
-      4. If no workflow fits the ticket cleanly, output `workflow_name` as
-         `"no-fit"` and explain. The confirm gate will surface this. Per
-         the on-rails principle, the correct response to no-fit is to add
-         a new workflow via PR — not to freestyle the change.
+      4. **Cap: 4 families.** If the ticket genuinely requires 5+
+         families, output `families: ["too-many"]` and explain in
+         `reasoning`. The dispatcher refuses to invoke; the engineer
+         splits the ticket.
 
-      5. If `workflow_name` is shipped=`no` (anything except
-         `sf-apex-change` as of Phase 4), the invoke step will refuse to
-         run it. The classifier still picks honestly; the system surfaces
-         the gap.
+      5. If no family fits cleanly, output `families: ["no-fit"]` and
+         explain. Per the on-rails principle, the response to no-fit is
+         to add a new family workflow via PR — not to freestyle.
+
+      6. **All seven families are shipped as of Phase 7.** The invoke
+         step routes single-family to that family directly, and
+         multi-family (>= 2 entries) to `sf-orchestrator` per ADR-0017.
     depends_on: [pull-jira-context, confirm-external-context]
     when: "$extract-jira-key.output.override_workflow == '' && $confirm-external-context.output.proceed == 'true'"
     model: haiku
@@ -196,6 +211,22 @@ nodes:
     output_format:
       type: object
       properties:
+        families:
+          type: array
+          items:
+            type: string
+            enum:
+              - sf-apex-change
+              - sf-metadata-change
+              - sf-flow-change
+              - sf-lwc-change
+              - sf-integration-change
+              - sf-permission-change
+              - sf-data-correction
+              - no-fit
+              - too-many
+          minItems: 1
+          maxItems: 4
         workflow_name:
           type: string
           enum:
@@ -206,13 +237,15 @@ nodes:
             - sf-integration-change
             - sf-permission-change
             - sf-data-correction
+            - sf-orchestrator
             - no-fit
+            - too-many
         scope:
           type: string
           enum: [small, medium, large]
         reasoning:
           type: string
-      required: [workflow_name, scope, reasoning]
+      required: [families, workflow_name, scope, reasoning]
 
   # ═══════════════════════════════════════════════════════════════
   # PHASE 3: CONFIRM (mandatory gate per ADR-0001)
@@ -297,32 +330,64 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: invoke-workflow
-    # Substituting `$confirm.output` (a JSON object) into bash via `echo "..." | jq`
-    # breaks shell quoting whenever the JSON contains inner double quotes, parens,
-    # or other shell metacharacters (e.g., from the user's description: `greet(String)`).
-    # Use Archon's nested-field substitution (`$<node>.output.<field>`) which yields a
-    # bare string value already safely quoted by Archon, and extract the ticket from
-    # `$ARGUMENTS` directly (which bash handles correctly under double quotes).
+    # Substituting `$confirm.output` into bash via echo + jq breaks shell
+    # quoting whenever JSON contains inner double quotes or parens. Use
+    # Archon nested-field substitution + extract ticket from $ARGUMENTS.
+    #
+    # Routing logic per ADR-0017:
+    # - chosen_workflow == sf-orchestrator: pass --families list
+    # - chosen_workflow == single family (sf-apex-change, etc.): direct invoke
+    # - chosen_workflow == no-fit or too-many: refuse with guidance
     bash: |
       set -euo pipefail
 
       WORKFLOW="$confirm.output.chosen_workflow"
+      FAMILIES_JSON='$classify-task-family.output.families'
       TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
       DESCRIPTION="$ARGUMENTS"
 
-      WORKFLOW_FILE=".archon/workflows/${WORKFLOW}.yaml"
-      if [ ! -f "$WORKFLOW_FILE" ]; then
-        echo "error: workflow '${WORKFLOW}' is not implemented yet in this engagement." >&2
-        echo "  Available task-family workflows here:" >&2
-        ls .archon/workflows/sf-*.yaml 2>/dev/null | sed 's|^|    - |' >&2 || echo "    (none)" >&2
-        echo "  Per ADR-0003, additional task families ship over Phase 7+." >&2
-        echo "  If your change genuinely needs one of the un-shipped workflows," >&2
-        echo "  open a PR against CreativLLC/archon-salesforce-jira proposing it." >&2
+      # Refusal cases first
+      if [ "$WORKFLOW" = "no-fit" ]; then
+        echo "error: classifier reports no task family fits this ticket." >&2
+        echo "  Per the on-rails principle, the response to 'no-fit' is to add a new" >&2
+        echo "  task family workflow via PR against CreativLLC/archon-salesforce-jira" >&2
+        echo "  — not to freestyle the change." >&2
+        echo "  Open an ADR + workflow YAML proposal, or split this ticket into pieces" >&2
+        echo "  that fit existing families." >&2
         exit 1
       fi
 
-      echo "→ Invoking ${WORKFLOW} for ticket ${TICKET}"
-      archon workflow run "${WORKFLOW}" "${DESCRIPTION}"
+      if [ "$WORKFLOW" = "too-many" ]; then
+        echo "error: classifier reports this ticket spans 5+ task families." >&2
+        echo "  Per ADR-0017, the orchestrator cap is 4 families per ticket." >&2
+        echo "  Split this Jira ticket into multiple smaller items, each spanning" >&2
+        echo "  at most 4 families." >&2
+        exit 1
+      fi
+
+      WORKFLOW_FILE=".archon/workflows/${WORKFLOW}.yaml"
+      if [ ! -f "$WORKFLOW_FILE" ]; then
+        echo "error: workflow '${WORKFLOW}' is not available in this engagement." >&2
+        echo "  Available task-family workflows here:" >&2
+        ls .archon/workflows/sf-*.yaml 2>/dev/null | sed 's|^|    - |' >&2 || echo "    (none)" >&2
+        echo "  Run harness-update.sh to refresh harness canon, or open a PR against" >&2
+        echo "  CreativLLC/archon-salesforce-jira if this workflow doesn't exist yet." >&2
+        exit 1
+      fi
+
+      # Build the invocation argument string. For sf-orchestrator, prepend
+      # --families <comma-list>. For single-family, just pass description as-is.
+      if [ "$WORKFLOW" = "sf-orchestrator" ]; then
+        FAMILIES_CSV=$(printf '%s' "$FAMILIES_JSON" | python3 -c '
+      import json, sys
+      print(",".join(json.load(sys.stdin)))
+      ')
+        echo "→ Invoking sf-orchestrator for ${TICKET} with families: ${FAMILIES_CSV}"
+        archon workflow run sf-orchestrator "${TICKET} --families ${FAMILIES_CSV} \"${DESCRIPTION}\""
+      else
+        echo "→ Invoking ${WORKFLOW} for ticket ${TICKET}"
+        archon workflow run "${WORKFLOW}" "${DESCRIPTION}"
+      fi
     depends_on: [confirm]
     when: "$confirm.output.proceed == 'true'"
 

@@ -1,0 +1,662 @@
+name: sf-metadata-change
+description: |
+  Second task-family workflow per ADR-0003. Handles Salesforce schema-layer
+  declarative artifacts — custom objects, custom fields, validation rules,
+  page layouts, picklists, record types. Sub-types, gates, validation strategy,
+  and orchestrator-mode contract locked in ADR-0018.
+
+  Invoked either by sf-dispatcher (`/sf <TICKET>` → classifier picks this
+  workflow → dispatcher's confirm gate → `archon run sf-metadata-change ...`)
+  or by sf-orchestrator (multi-family ticket, per ADR-0017).
+
+  Inputs:
+    $ARGUMENTS — passed by sf-dispatcher or sf-orchestrator's bash invoke:
+                  `--ticket <KEY> --description "<text>"`
+                  When invoked by sf-orchestrator, additionally contains
+                  `--orchestrated true`. Family workflows detect this by
+                  grep'ing $ARGUMENTS in the log-workflow-run and Jira
+                  write-back nodes. Per the orchestrator-mode contract
+                  in ADR-0017 §"Family workflow contract".
+
+  Orchestrated-mode contract (per ADR-0017):
+    - When $ARGUMENTS contains `--orchestrated true`:
+      - update-jira-success and update-jira-failure nodes are SKIPPED
+        (the orchestrator handles consolidated Jira write-back).
+      - log-workflow-run STILL fires and writes:
+          1. _internal/harness-runs.log line (as always).
+          2. _internal/cost-log.jsonl record (per ADR-0016, as always).
+          3. family_result.json to
+             _internal/orchestrator-runs/$ORCHESTRATOR_RUN_ID/sf-metadata-change.json
+             (the orchestrator reads this to aggregate results).
+    - When $ARGUMENTS does NOT contain `--orchestrated true` (standalone
+      /sf run): the workflow behaves exactly as a single-family workflow.
+      update-jira-* fire; log-workflow-run writes the run-log and cost-log
+      only (no family_result.json).
+
+  Structural backbone per ADR-0003:
+    1. extract-jira-key             (deterministic)
+    2. pull-jira-context            (command: pull-jira-context)
+    3. classify-sub-type            (LLM, scoped to this task family)
+    4. smoke-validate-claims        (verify ticket's concrete claims)
+    5. verify-org-context           (command: verify-org-context)
+    6. load-engagement-context      (command: load-engagement-context)
+    7. plan                         (command: sf-metadata-change-plan)
+    8. gate-pre-execute             (interactive, conditional per ADR-0018 §5)
+    9. execute                      (command: sf-metadata-change-execute)
+    10. validate                    (command: sf-metadata-change-validate)
+    10b. gate-post-validate         (interactive, conditional per ADR-0018 §6)
+    11. document                    (command: sf-metadata-change-document)
+    12. update-jira-success/failure (suppressed when --orchestrated true)
+    13. log-workflow-run            (always fires; run-log + cost-log + family_result.json when orchestrated)
+
+provider: claude
+model: sonnet
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH & CLASSIFY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: extract-jira-key
+    prompt: |
+      Extract the Jira ticket key from $ARGUMENTS.
+
+      Input: $ARGUMENTS  (e.g., `--ticket ACME-201 --description "..."`)
+
+      The ticket key must match `^[A-Z][A-Z0-9]+-\d+$`. If absent or
+      malformed, fail with:
+        `error: missing or invalid --ticket. Expected like ACME-201.`
+
+      Output ONLY the bare ticket key (no quotes, markdown, or extra text).
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        description:
+          type: string
+      required: [ticket, description]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [extract-jira-key]
+    context: fresh
+
+  - id: classify-sub-type
+    prompt: |
+      You are the sf-metadata-change sub-type classifier. The dispatcher
+      (or orchestrator) already chose this workflow; your job is to pick
+      the correct sub-type from ADR-0018 §1, the scope, and a few side
+      flags downstream gates use.
+
+      ## Context
+
+      ### Jira ticket
+      $pull-jira-context.output
+
+      ### Engineer's free-form description
+      $extract-jira-key.output.description
+
+      ## Sub-types (ADR-0018)
+
+      | sub_type                  | trigger                                                      |
+      |---------------------------|--------------------------------------------------------------|
+      | create-custom-object      | New `<Object>.object-meta.xml` added                         |
+      | modify-custom-object      | Existing object's `<Object>.object-meta.xml` changed         |
+      | create-field              | New field-meta.xml on a custom or standard object            |
+      | modify-field              | Existing field's type, length, required, default, or values  |
+      | delete-field              | Field metadata removed (destructive)                         |
+      | create-validation-rule    | New validationRule-meta.xml                                  |
+      | modify-validation-rule    | Existing rule's formula or active state changed              |
+      | delete-validation-rule    | Rule removed (destructive)                                   |
+      | create-record-type        | New recordType-meta.xml                                      |
+      | modify-record-type        | Existing record type's picklist filters or label changed     |
+      | create-page-layout        | New layout-meta.xml                                          |
+      | modify-page-layout        | Existing layout's fields or sections changed                 |
+      | create-picklist-value     | New value added to an existing picklist (additive)           |
+      | delete-picklist-value     | Picklist value removed (destructive — may break data)        |
+
+      ## Precedence (when ticket implies multiple)
+
+      `delete-field` > `delete-validation-rule` > `delete-picklist-value`
+      > `modify-field` (type change) > `create-custom-object` > `create-field`
+      > `modify-field` (non-type) > `modify-custom-object`
+      > `create-validation-rule` > `modify-validation-rule`
+      > `create-record-type` > `modify-record-type` > `create-picklist-value`
+      > `modify-page-layout` > `create-page-layout`.
+
+      Higher-precedence sub-types have stricter gates; over-gate is safer
+      than under-gate.
+
+      ## Scope
+
+      Estimate, conservatively (round up when uncertain):
+      - small:  1–3 files, single object, ticket is clear
+      - medium: 3–10 files, one or two objects, some investigation needed
+      - large:  10+ files, multi-object, vague/exploratory
+
+      ## Side flags
+
+      - `touches_fls`: `"true"` if the change adds or removes a field, or
+        changes the sharing model on an object. Drives whether the document
+        step updates `docs/security/*` per ADR-0013.
+      - `is_destructive_modify_field`: `"true"` if the sub_type is
+        `modify-field` AND the modification is a TYPE CHANGE (e.g., Text →
+        Number) or makes a previously-optional field REQUIRED. Drives the
+        pre-execute CONFIRM gate.
+      - `affects_picklist_data`: `"true"` if the change deletes a picklist
+        value OR modifies a picklist field in a way that could strand
+        existing records. Drives the pre-execute gate display.
+      - `needs_external_research`: `"true"` if the change depends on
+        specifics of a Salesforce platform feature whose behavior is NOT
+        apparent from the engagement docs or codebase. (For Phase 7, the
+        flag is recorded but doesn't change the DAG.)
+    depends_on: [pull-jira-context]
+    model: haiku
+    allowed_tools: []
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        sub_type:
+          type: string
+          enum:
+            - create-custom-object
+            - modify-custom-object
+            - create-field
+            - modify-field
+            - delete-field
+            - create-validation-rule
+            - modify-validation-rule
+            - delete-validation-rule
+            - create-record-type
+            - modify-record-type
+            - create-page-layout
+            - modify-page-layout
+            - create-picklist-value
+            - delete-picklist-value
+        scope:
+          type: string
+          enum: [small, medium, large]
+        touches_fls:
+          type: string
+          enum: ["true", "false"]
+        is_destructive_modify_field:
+          type: string
+          enum: ["true", "false"]
+        affects_picklist_data:
+          type: string
+          enum: ["true", "false"]
+        needs_external_research:
+          type: string
+          enum: ["true", "false"]
+        reasoning:
+          type: string
+      required:
+        - sub_type
+        - scope
+        - touches_fls
+        - is_destructive_modify_field
+        - affects_picklist_data
+        - needs_external_research
+        - reasoning
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1.5: SMOKE-VALIDATE
+  # Verify the ticket's concrete claims match the codebase before any
+  # skip decision. Additionally — for modify-field/required and
+  # delete-field — query the org for record counts that would be affected.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: smoke-validate-claims
+    prompt: |
+      You are the smoke validator. Your job: check that the ticket's
+      claims about the schema are ACCURATE so downstream gates rest on
+      a reliable foundation.
+
+      ## Context
+
+      ### Ticket
+      $pull-jira-context.output
+
+      ### Classifier output
+      $classify-sub-type.output
+
+      ## Task
+
+      Extract concrete, verifiable claims from the ticket body and recent
+      comments:
+      - Object API names referenced (e.g. `Account`, `Renewal__c`).
+      - Field API names referenced (`Object.Field__c`).
+      - Validation rule names referenced.
+      - Record type, page layout, picklist value names referenced.
+      - File paths in `force-app/main/default/objects/`.
+
+      Then verify each concrete claim against the engagement repo:
+      - Read cited file paths. Confirm existence.
+      - For object references: check `force-app/main/default/objects/<Object>/<Object>.object-meta.xml`.
+      - For field references: check `force-app/main/default/objects/<Object>/fields/<Field>.field-meta.xml`.
+      - For validation rules: check `force-app/main/default/objects/<Object>/validationRules/<Rule>.validationRule-meta.xml`.
+
+      ## Existing-data check (conditional, additive)
+
+      If `$classify-sub-type.output.sub_type` is `modify-field` AND the
+      ticket implies the field is becoming required, OR the sub_type is
+      `delete-field` or `delete-picklist-value`, set the side flag
+      `affects_existing_records` based on a rough heuristic from the docs:
+
+      - If `docs/objects/<Object>.md` exists and notes a non-empty record
+        count or describes the field as "populated" / "in use", set
+        `affects_existing_records: "true"`.
+      - Otherwise default to `"unknown"` — the workflow's pre-execute gate
+        will display this and the engineer can verify in the scratch org
+        or sandbox before confirming.
+
+      Do NOT run a live SOQL query here — keep this node deterministic
+      and offline. The org-level check happens in `validate` when the
+      change is deployed.
+
+      ## Budget
+
+      Spend ~30 seconds. Check the 2–3 most load-bearing claims. Prefer
+      false-negative safety (flag inaccurate when uncertain) over
+      false-positive (skipping a gate on shaky ground).
+
+      If the ticket has NO concrete claims (purely descriptive — e.g.,
+      "the Account schema needs cleanup" with no specific fields), default
+      `claims_accurate` to `"false"`. The workflow will fall back to full
+      pipeline behavior.
+
+      ## Output
+
+      Set `claims_accurate`:
+      - `"true"`  — the claims you checked match the current schema.
+      - `"false"` — one or more claims don't match reality.
+
+      Include `mismatches` as a list of strings, one per discrepancy.
+    depends_on: [classify-sub-type]
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        claims_accurate:
+          type: string
+          enum: ["true", "false"]
+        mismatches:
+          type: array
+          items:
+            type: string
+        affects_existing_records:
+          type: string
+          enum: ["true", "false", "unknown"]
+        reasoning:
+          type: string
+      required: [claims_accurate, mismatches, affects_existing_records, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: SF-SPECIFIC CONTEXT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-org-context
+    command: verify-org-context
+    depends_on: [smoke-validate-claims]
+    context: fresh
+
+  - id: load-engagement-context
+    command: load-engagement-context
+    depends_on: [verify-org-context]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: PLAN
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    command: sf-metadata-change-plan
+    depends_on: [load-engagement-context, classify-sub-type, smoke-validate-claims]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: GATE (pre-execute, conditional per ADR-0018 §5)
+  # Fires when ANY:
+  #   - sub_type ∈ {delete-field, delete-validation-rule, delete-picklist-value}
+  #   - sub_type == 'modify-field' AND is_destructive_modify_field == 'true'
+  #   - sub_type == 'modify-field' AND smoke-validate flagged affected records
+  #   - scope == 'large'
+  #   - smoke-validate flagged inaccurate claims
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-pre-execute
+    prompt: |
+      You are the in-workflow pre-execute confirm gate. Per ADR-0018 §5,
+      this gate fires only when the change is destructive, large, or
+      based on inaccurate ticket claims.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Ticket:      $extract-jira-key.output.ticket
+      Sub-type:    $classify-sub-type.output.sub_type
+      Scope:       $classify-sub-type.output.scope
+      Claims:      $smoke-validate-claims.output.claims_accurate
+                   (mismatches: see smoke-validate output)
+      Records:     $smoke-validate-claims.output.affects_existing_records
+                   (existing records that may be affected — verify in scratch/sandbox)
+
+      Plan:        $plan.output  (summary — read full plan in $ARTIFACTS_DIR/plan.md)
+
+      Why this gate fired:
+        <list the trigger(s): delete-*, modify-field type/required change,
+         scope=large, claims_accurate=false>
+
+      Acceptance:
+        - If this gate fired due to a DESTRUCTIVE sub-type (delete-field,
+          delete-validation-rule, delete-picklist-value) OR a field-becoming
+          -required change on existing data, require literal `CONFIRM`
+          (uppercase, exact) — NOT `y`/`yes`.
+        - For scope=large or inaccurate-claims-only triggers, accept
+          `y` / `yes` (case-insensitive).
+        - Always accept `n` / `no` / empty to abort.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Show the engineer the plan summary and the trigger reason(s). For
+      destructive sub-types, additionally surface:
+
+      - The reference-impact scan preview from `$plan.output` (the plan
+        node enumerates likely downstream references; validate later does
+        the authoritative grep).
+      - The smoke-validate `affects_existing_records` flag — `"true"`
+        means existing data carries the affected value/field.
+
+      Wait for response. Emit structured output.
+
+      If the engineer aborts, the workflow stops cleanly. No metadata is
+      changed; no deploy is attempted; the run log records the abort.
+    depends_on: [plan, classify-sub-type, smoke-validate-claims]
+    when: >-
+      $classify-sub-type.output.sub_type == 'delete-field' ||
+      $classify-sub-type.output.sub_type == 'delete-validation-rule' ||
+      $classify-sub-type.output.sub_type == 'delete-picklist-value' ||
+      ($classify-sub-type.output.sub_type == 'modify-field' && $classify-sub-type.output.is_destructive_modify_field == 'true') ||
+      ($classify-sub-type.output.sub_type == 'modify-field' && $smoke-validate-claims.output.affects_existing_records == 'true') ||
+      $classify-sub-type.output.scope == 'large' ||
+      $smoke-validate-claims.output.claims_accurate == 'false'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: EXECUTE
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: execute
+    command: sf-metadata-change-execute
+    depends_on: [plan, gate-pre-execute]
+    # When gate-pre-execute is skipped (no trigger fired), this still runs.
+    # When it ran, only proceed if proceed == 'true'.
+    trigger_rule: none_failed_min_one_success
+    when: "$gate-pre-execute.output.proceed != 'false'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: VALIDATE
+  # The command internally orchestrates:
+  #   • scripts/deploy-to-scratch.sh  (or target_org_alias if HARNESS_SKIP_SCRATCH=1)
+  #   • inline reference-impact grep against force-app/ for any deleted
+  #     or renamed fields/objects/rules
+  #   • FLS-coverage cross-check against docs/security/*  (when create-field)
+  # No Apex test execution here — that's sf-apex-change's job. Cross-family
+  # tickets get test coverage when the orchestrator sequences sf-apex-change
+  # after this workflow.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    command: sf-metadata-change-validate
+    depends_on: [execute]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6.5: GATE (post-validate, for reference-impact or FLS issues)
+  # Fires when validate flagged issues the pre-execute gate couldn't have
+  # seen (broken references depend on the executed change; FLS implications
+  # depend on the new field's schema).
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-post-validate
+    prompt: |
+      You are the in-workflow post-validate confirm gate. The validate
+      step flagged issues that need engineer judgment before document /
+      update-jira proceeds.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Validation results:
+        Deploy:                $validate.output.deploy_result
+        Reference-impact:      $validate.output.reference_impact_result
+        FLS coverage:          $validate.output.fls_coverage_result
+
+      Issues found:
+        <list per the validate output — broken references in classes/triggers/flows/lwc,
+         FLS posture decisions awaited, etc.>
+
+      Acceptance:
+        - If reference_impact_result == 'fail' (downstream code now references
+          a deleted/renamed field): require literal `CONFIRM`. The engineer is
+          explicitly acknowledging the breakage and committing to fix it.
+        - If fls_coverage_result == 'fail' (new field without an FLS posture
+          decision yet documented): accept `y`/`yes`. The document step will
+          record the proposed posture in docs/security/* and a follow-up
+          sf-permission-change run grants it.
+        - Always accept `n`/`no`/empty to abort.
+
+      If you abort here, the metadata change remains deployed in the scratch/
+      target org and remains in the working tree, but no docs are written,
+      no Jira comment is posted, and the run log records the abort. The
+      engineer can fix the references and re-run, or revert the working tree.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Surface the validate details to the engineer, get their response,
+      emit structured output.
+    depends_on: [validate]
+    when: >-
+      $validate.output.reference_impact_result == 'fail' ||
+      $validate.output.fls_coverage_result == 'fail'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: DOCUMENT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document
+    command: sf-metadata-change-document
+    depends_on: [validate, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      $gate-post-validate.output.proceed != 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: UPDATE JIRA
+  # Two branches: success (post structured comment, transition to in_review)
+  # and failure (post failure comment, transition back to ready_for_dev).
+  # BOTH suppressed when $ARGUMENTS contains '--orchestrated true' per
+  # ADR-0017 — the orchestrator handles the consolidated Jira write-back.
+  # The `! $ARGUMENTS contains '--orchestrated true'` form matches the
+  # convention adopted in sf-apex-change.yaml.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: update-jira-success
+    command: update-jira-on-completion
+    depends_on: [document, validate]
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      ! $ARGUMENTS contains '--orchestrated true'
+    context: fresh
+
+  - id: update-jira-failure
+    command: update-jira-on-failure
+    depends_on: [validate, gate-pre-execute, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      ($validate.output.overall_result == 'fail' ||
+       $gate-pre-execute.output.proceed == 'false' ||
+       $gate-post-validate.output.proceed == 'false') &&
+      ! $ARGUMENTS contains '--orchestrated true'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 9: LOG
+  # ALWAYS fires (whether orchestrated or not). Emits:
+  #   1. Append-only line to _internal/harness-runs.log
+  #   2. JSONL record to _internal/cost-log.jsonl per ADR-0016
+  #   3. family_result.json to $ORCHESTRATOR_DIR/sf-metadata-change.json
+  #      when $ARGUMENTS contains '--orchestrated true' per ADR-0017 — the
+  #      orchestrator reads this file to aggregate per-family results.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-workflow-run
+    # Use Archon nested-field substitution where possible; fall back to shell
+    # defaults for fields from skipped nodes. Same pattern as sf-apex-change.yaml.
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      SUB_TYPE="$classify-sub-type.output.sub_type"
+      SCOPE="$classify-sub-type.output.scope"
+
+      # Validate / gate results: optional fields use shell defaults when the node was skipped.
+      VALIDATE_RESULT="${validate_output_overall_result:-skipped}"
+      PRE_GATE_DECISION="${gate_pre_execute_output_proceed:-skipped}"
+      POST_GATE_DECISION="${gate_post_validate_output_proceed:-skipped}"
+
+      # If Archon supports nested-field substitution, prefer the explicit form;
+      # the shell defaults above protect against unset variables for skipped nodes.
+      [ "$validate.output.overall_result" != "" ] && VALIDATE_RESULT="$validate.output.overall_result" || true
+      [ "$gate-pre-execute.output.proceed" != "" ] && PRE_GATE_DECISION="$gate-pre-execute.output.proceed" || true
+      [ "$gate-post-validate.output.proceed" != "" ] && POST_GATE_DECISION="$gate-post-validate.output.proceed" || true
+
+      if [ "$VALIDATE_RESULT" = "pass" ] && [ "$PRE_GATE_DECISION" != "false" ] && [ "$POST_GATE_DECISION" != "false" ]; then
+        RESULT="success"
+      else
+        RESULT="failure"
+      fi
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  %s  sf-metadata-change  sub_type=%s  scope=%s  result=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${SUB_TYPE}" "${SCOPE}" "${RESULT}" \
+        >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. Heuristic estimate (nodes by model × rates).
+      # sf-metadata-change typical shape: ~2 haiku, ~9 sonnet, ~1 opus[1m], ~3 bash.
+      # Lighter than sf-apex-change because metadata changes don't run Apex tests
+      # and the execute node is smaller (one opus[1m] pass vs two for code+tests).
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_INPUT_TOKENS=240000
+      EST_OUTPUT_TOKENS=28000
+      EST_COST_USD=$(python3 -c "
+input_tok = $EST_INPUT_TOKENS / 1_000_000
+output_tok = $EST_OUTPUT_TOKENS / 1_000_000
+# Weighted blend: 1 opus[1m] node dominates (~50% cost), rest is sonnet + haiku.
+#   opus_1m portion: 0.5 * (input_tok * 20 + output_tok * 100)
+#   sonnet portion:  0.4 * (input_tok * 3  + output_tok * 15)
+#   haiku portion:   0.1 * (input_tok * 1  + output_tok * 5)
+cost = (0.5 * (input_tok * 20 + output_tok * 100)) + \
+       (0.4 * (input_tok * 3 + output_tok * 15)) + \
+       (0.1 * (input_tok * 1 + output_tok * 5))
+print(f'{cost:.2f}')
+")
+
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-metadata-change\",\"ticket\":\"%s\",\"engagement\":\"%s\",\"harness_version\":\"%s\",\"nodes\":{\"haiku\":2,\"sonnet\":9,\"opus_1m\":1,\"bash\":3},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"%s\",\"sub_type\":\"%s\",\"scope\":\"%s\"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" "${RESULT}" "${SUB_TYPE}" "${SCOPE}" \
+        >> "$COST_LOG"
+
+      # Orchestrated-mode contract per ADR-0017: when running under
+      # sf-orchestrator, emit family_result.json to the orchestrator's
+      # collection directory. The orchestrator reads this after
+      # invoke-families-in-sequence to aggregate per-family results into
+      # one consolidated Jira comment. Same pattern as sf-apex-change.yaml.
+      if printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true'; then
+        if [ -z "${ORCHESTRATOR_RUN_ID:-}" ]; then
+          echo "  ⚠ --orchestrated true but ORCHESTRATOR_RUN_ID is unset; can't emit family_result.json" >&2
+        else
+          ORCHESTRATOR_DIR="_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}"
+          mkdir -p "$ORCHESTRATOR_DIR"
+          FAMILY_RESULT_FILE="$ORCHESTRATOR_DIR/sf-metadata-change.json"
+
+          # Status is one of: success / failure / gate-aborted (pre or post
+          # gate returned proceed=false). The orchestrator distinguishes
+          # gate-aborts from validation failures when rendering the
+          # consolidated Jira comment.
+          if [ "$PRE_GATE_DECISION" = "false" ] || [ "$POST_GATE_DECISION" = "false" ]; then
+            FAMILY_STATUS="gate-aborted"
+          elif [ "$RESULT" = "success" ]; then
+            FAMILY_STATUS="success"
+          else
+            FAMILY_STATUS="failure"
+          fi
+
+          python3 <<PYEOF
+      import json
+      result = {
+          "family": "sf-metadata-change",
+          "status": "$FAMILY_STATUS",
+          "ticket": "$TICKET",
+          "sub_type": "$SUB_TYPE",
+          "scope": "$SCOPE",
+          "files_changed_actual": [],  # populated from \$execute.output if available
+          "validation_results": {
+              "deploy": "${validate_output_deploy_result:-unknown}",
+              "reference_impact": "${validate_output_reference_impact_result:-unknown}",
+              "fls_coverage": "${validate_output_fls_coverage_result:-unknown}",
+              "overall": "$VALIDATE_RESULT",
+          },
+          "doc_updates": [],            # populated from \$document.output if available
+          "errors": [],
+      }
+      with open("$FAMILY_RESULT_FILE", "w") as out:
+          json.dump(result, out, indent=2)
+      PYEOF
+          echo "  → family_result.json written for orchestrator: $FAMILY_RESULT_FILE"
+        fi
+      fi
+    depends_on: [update-jira-success, update-jira-failure]
+    trigger_rule: none_failed_min_one_success

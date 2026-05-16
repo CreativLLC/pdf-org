@@ -1,0 +1,712 @@
+name: sf-integration-change
+description: |
+  Phase 7 task-family workflow per ADR-0003 and ADR-0022. Handles external
+  integrations: Apex callouts, Named Credentials, Connected Apps, Platform
+  Events, webhook handlers, External Services. Sub-types, gates, and
+  validation strategy locked in ADR-0022.
+
+  Credentials-hygiene check per ADR-0008 is unconditional within this
+  family — every changed file is scanned for literal API keys, OAuth
+  secrets, and tokens regardless of sub-type. A match fails validate and
+  fires the post-validate gate with a literal-CONFIRM acceptance form.
+
+  Invoked by sf-dispatcher (`/sf <TICKET>` → classifier picks this workflow
+  → dispatcher's confirm gate → `archon run sf-integration-change ...`)
+  OR by sf-orchestrator (with `--orchestrated true` appended to $ARGUMENTS,
+  per ADR-0017) when the ticket spans multiple families.
+
+  Inputs:
+    $ARGUMENTS  — passed by sf-dispatcher or sf-orchestrator:
+                  Single-family form: `<TICKET> "<description>"`.
+                  Orchestrated form:  `<TICKET> --orchestrated true "<description>"`.
+                  Orchestrated mode is detected by grep-ing $ARGUMENTS for
+                  `--orchestrated true` — when set, update-jira-* nodes are
+                  suppressed and log-workflow-run writes family_result.json
+                  to disk for the orchestrator to read.
+
+  Structural backbone per ADR-0003:
+    1. extract-jira-key             (deterministic)
+    2. pull-jira-context            (command: pull-jira-context)
+    3. classify-sub-type            (LLM, scoped to this task family)
+    4. smoke-validate-claims        (verify ticket's concrete claims)
+    5. verify-org-context           (command: verify-org-context)
+    6. load-engagement-context      (command: load-engagement-context)
+    7. plan                         (command: sf-integration-change-plan)
+    8. gate-pre-execute             (interactive, conditional per ADR-0022 §5)
+    9. execute                      (command: sf-integration-change-execute)
+    10. validate                    (command: sf-integration-change-validate)
+    10.5. gate-post-validate        (interactive, conditional per ADR-0022 §6)
+    11. document                    (command: sf-integration-change-document)
+    12. update-jira-{success,failure}  (suppressed when --orchestrated true in $ARGUMENTS)
+    13. log-workflow-run            (always — emits run log + cost log + family_result)
+
+provider: claude
+model: sonnet
+
+# Orchestrated mode (per ADR-0017) is detected by grep'ing for
+# '--orchestrated true' in $ARGUMENTS — matching the sf-apex-change.yaml
+# pattern. update-jira-* nodes are suppressed and log-workflow-run writes
+# family_result.json to disk for the orchestrator to read.
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH & CLASSIFY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: extract-jira-key
+    prompt: |
+      Extract the Jira ticket key from $ARGUMENTS.
+
+      Input: $ARGUMENTS  (e.g., `--ticket ACME-101 --description "..."`)
+
+      The ticket key must match `^[A-Z][A-Z0-9]+-\d+$`. If absent or
+      malformed, fail with:
+        `error: missing or invalid --ticket. Expected like ACME-101.`
+
+      Output ONLY the bare ticket key (no quotes, markdown, or extra text).
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        description:
+          type: string
+      required: [ticket, description]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [extract-jira-key]
+    context: fresh
+
+  - id: classify-sub-type
+    prompt: |
+      You are the sf-integration-change sub-type classifier. The dispatcher
+      already chose this workflow; your job is to pick the correct
+      sub-type from ADR-0022 §1, plus the scope and side flags that
+      downstream gates use.
+
+      ## Context
+
+      ### Jira ticket
+      $pull-jira-context.output
+
+      ### Engineer's free-form description
+      $extract-jira-key.output.description
+
+      ## Sub-types (ADR-0022 §1)
+
+      | sub_type                  | trigger                                                                  |
+      |---------------------------|--------------------------------------------------------------------------|
+      | create-callout            | New Apex class doing HTTP callouts to an external system                 |
+      | modify-callout            | Existing callout class changed (endpoint, method, payload, error-handling)|
+      | create-named-credential   | New `*.namedCredential-meta.xml`                                         |
+      | modify-named-credential   | Existing NC's endpoint or auth changed                                   |
+      | delete-named-credential   | NC removed                                                               |
+      | create-connected-app      | New `*.connectedApp-meta.xml`                                            |
+      | modify-connected-app      | Existing Connected App's scopes or callback URL changed                  |
+      | delete-connected-app      | Connected App removed                                                    |
+      | create-platform-event     | New `*.object-meta.xml` ending in `__e` + field definitions              |
+      | modify-platform-event     | Existing PE's fields changed                                             |
+      | delete-platform-event     | PE removed                                                               |
+      | create-webhook-handler    | New `@RestResource` Apex class receiving inbound webhooks                |
+      | modify-webhook-handler    | Existing webhook handler's endpoint or payload-parsing changed           |
+      | create-external-service   | New `*.externalServiceRegistration-meta.xml`                             |
+      | modify-external-service   | Existing ESR's schema changed                                            |
+
+      ## Precedence (when ticket implies multiple)
+
+      `delete-named-credential` > `delete-platform-event` >
+      `delete-connected-app` > `modify-named-credential` (endpoint/auth) >
+      `modify-connected-app` (scope/callback) > `modify-platform-event`
+      (field removal/type change) > `modify-callout` (endpoint change) >
+      `modify-webhook-handler` (URL pattern change) >
+      `create-named-credential` > `create-connected-app` >
+      `create-platform-event` > `create-webhook-handler` >
+      `create-callout` > `create-external-service` >
+      `modify-external-service` > additive `modify-callout` (new method,
+      new payload field) > additive `modify-platform-event` (new field).
+
+      Higher-precedence sub-types have stricter gates; over-gate is safer
+      than under-gate.
+
+      ## Scope
+
+      Estimate, conservatively (round up when uncertain):
+      - small:  1–3 files, single external system, ticket is clear
+      - medium: 3–10 files, one or two external systems, some investigation needed
+      - large:  10+ files, cross-system, vague/exploratory
+
+      ## Side flags
+
+      Each flag downstream gates or commands consume:
+
+      - `endpoint_or_auth_changes`: `"true"` if a `modify-named-credential`
+        change touches the `<endpoint>` element OR the auth `<protocol>` /
+        `<authProvider>` / `<principalType>` elements (vs. just `<label>`
+        or `<description>`). Triggers pre-execute literal CONFIRM.
+      - `scopes_reduced_or_callback_changed`: `"true"` if a
+        `modify-connected-app` change reduces the OAuth scope list OR
+        changes the `<callbackUrl>`. Triggers pre-execute gate.
+      - `pe_field_removed_or_type_changed`: `"true"` if a
+        `modify-platform-event` change removes a field or changes a field
+        type (vs. purely additive). Triggers pre-execute gate.
+      - `callout_endpoint_changes`: `"true"` if a `modify-callout` change
+        targets a different endpoint URL path (vs. payload/error-handling
+        only). Triggers pre-execute gate.
+      - `webhook_url_pattern_changes`: `"true"` if a `modify-webhook-handler`
+        change alters the `urlMapping` / `@RestResource(urlMapping=...)`
+        annotation. Triggers pre-execute gate.
+      - `touches_credentials`: `"true"` if the change touches any
+        credential-loading code path (auth header construction, OAuth flow,
+        signature verification). Informational; surfaced to the plan/execute
+        prompts as a reminder that credentials hygiene is unconditional.
+      - `needs_external_research`: `"true"` if the fix depends on
+        specifics of an external system's API whose behavior isn't apparent
+        from the engagement docs or codebase.
+    depends_on: [pull-jira-context]
+    model: haiku
+    allowed_tools: []
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        sub_type:
+          type: string
+          enum:
+            - create-callout
+            - modify-callout
+            - create-named-credential
+            - modify-named-credential
+            - delete-named-credential
+            - create-connected-app
+            - modify-connected-app
+            - delete-connected-app
+            - create-platform-event
+            - modify-platform-event
+            - delete-platform-event
+            - create-webhook-handler
+            - modify-webhook-handler
+            - create-external-service
+            - modify-external-service
+        scope:
+          type: string
+          enum: [small, medium, large]
+        endpoint_or_auth_changes:
+          type: string
+          enum: ["true", "false"]
+        scopes_reduced_or_callback_changed:
+          type: string
+          enum: ["true", "false"]
+        pe_field_removed_or_type_changed:
+          type: string
+          enum: ["true", "false"]
+        callout_endpoint_changes:
+          type: string
+          enum: ["true", "false"]
+        webhook_url_pattern_changes:
+          type: string
+          enum: ["true", "false"]
+        touches_credentials:
+          type: string
+          enum: ["true", "false"]
+        needs_external_research:
+          type: string
+          enum: ["true", "false"]
+        external_system:
+          type: string
+        reasoning:
+          type: string
+      required:
+        - sub_type
+        - scope
+        - endpoint_or_auth_changes
+        - scopes_reduced_or_callback_changed
+        - pe_field_removed_or_type_changed
+        - callout_endpoint_changes
+        - webhook_url_pattern_changes
+        - touches_credentials
+        - needs_external_research
+        - external_system
+        - reasoning
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1.5: SMOKE-VALIDATE
+  # Verify the ticket's concrete claims match the codebase before any
+  # skip decision. Inaccurate claims → workflow falls back to the full
+  # pipeline (no shortcuts) and surfaces the disagreement at the gate.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: smoke-validate-claims
+    prompt: |
+      You are the smoke validator. Your job: check that the ticket's
+      claims about the integration code/metadata are ACCURATE so
+      downstream gates rest on a reliable foundation.
+
+      ## Context
+
+      ### Ticket
+      $pull-jira-context.output
+
+      ### Classifier output
+      $classify-sub-type.output
+
+      ## Task
+
+      Extract concrete, verifiable claims from the ticket body and recent
+      comments:
+      - Apex callout class names (e.g. `StripeBillingService`).
+      - Named Credential names (e.g. `Stripe_API`).
+      - Connected App names.
+      - Platform Event names (e.g. `Charge_Failed__e`).
+      - Webhook handler class names + URL mappings.
+      - External system identities (Stripe, DocuSign, Snowflake, etc.).
+      - Endpoint URLs cited (without echoing any auth token from headers).
+      - File paths in `force-app/main/default/`:
+        `classes/`, `namedCredentials/`, `connectedApps/`,
+        `objects/<X>__e/`, `externalServiceRegistrations/`.
+      - Field references on Platform Events (`Event__e.Field__c`).
+
+      Then verify each concrete claim against the engagement repo:
+      - Read cited file paths. Confirm existence.
+      - Grep for cited symbols.
+      - For Platform Event field references, check
+        `force-app/main/default/objects/<PE>__e/fields/<Field>.field-meta.xml`.
+      - For Named Credential references, check that the named credential
+        file actually exists in `force-app/main/default/namedCredentials/`.
+
+      ## Budget
+
+      Spend ~30 seconds. Check the 2–3 most load-bearing claims.
+
+      If the ticket has NO concrete claims (purely descriptive — "the
+      Stripe integration is broken" with no file paths, no class names,
+      no specific endpoint), default `claims_accurate` to `"false"`.
+
+      ## Output
+
+      Set `claims_accurate`:
+      - `"true"`  — claims match current code; ticket is a reliable spec.
+      - `"false"` — one or more claims don't match reality.
+
+      Include `mismatches` as a list of strings.
+
+      **CRITICAL:** if the ticket body contains what appears to be an
+      actual credential value (token, API key, OAuth secret), do NOT echo
+      it into your output. Note "credential-like string present in ticket
+      body; engineer should rotate if real" in `mismatches` and proceed.
+      Per ADR-0008 the audit trail must not widen the leak.
+    depends_on: [classify-sub-type]
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        claims_accurate:
+          type: string
+          enum: ["true", "false"]
+        mismatches:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+      required: [claims_accurate, mismatches, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: SF-SPECIFIC CONTEXT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-org-context
+    command: verify-org-context
+    depends_on: [smoke-validate-claims]
+    context: fresh
+
+  - id: load-engagement-context
+    command: load-engagement-context
+    depends_on: [verify-org-context]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: PLAN
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    command: sf-integration-change-plan
+    depends_on: [load-engagement-context, classify-sub-type, smoke-validate-claims]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: GATE (pre-execute, conditional per ADR-0022 §5)
+  # Fires when ANY:
+  #   - sub_type ∈ {delete-named-credential, delete-platform-event,
+  #                  delete-connected-app}
+  #   - sub_type == modify-named-credential AND endpoint_or_auth_changes
+  #   - sub_type == modify-connected-app AND scopes_reduced_or_callback_changed
+  #   - sub_type == modify-platform-event AND pe_field_removed_or_type_changed
+  #   - sub_type == modify-callout AND callout_endpoint_changes
+  #   - sub_type == modify-webhook-handler AND webhook_url_pattern_changes
+  #   - scope == 'large'
+  #   - smoke-validate flagged inaccurate claims
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-pre-execute
+    prompt: |
+      You are the in-workflow confirm gate (pre-execute). Per ADR-0022 §5,
+      this gate fires only when the change is destructive, production-
+      impacting (endpoint/auth/scope/field-removal), large, or based on
+      inaccurate ticket claims.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Ticket:           $extract-jira-key.output.ticket
+      Sub-type:         $classify-sub-type.output.sub_type
+      External system:  $classify-sub-type.output.external_system
+      Scope:            $classify-sub-type.output.scope
+      Claims:           $smoke-validate-claims.output.claims_accurate
+                        (mismatches: see smoke-validate output)
+
+      Plan:             $plan.output  (summary — full plan at $ARTIFACTS_DIR/plan.md)
+
+      Downstream impact:
+        <list per the plan's downstream-consumer summary —
+         Apex classes / Flows / external systems affected>
+
+      Why this gate fired:
+        <list the trigger(s): delete-* / modify-named-credential
+         endpoint-or-auth-change / modify-connected-app scope-or-callback /
+         modify-platform-event field-removal-or-type-change /
+         modify-callout endpoint-change / modify-webhook-handler
+         url-pattern-change / scope=large / claims_accurate=false>
+
+      Acceptance:
+        - If this gate fired due to a DESTRUCTIVE sub-type (delete-named-
+          credential / delete-platform-event / delete-connected-app) OR
+          modify-named-credential with endpoint/auth change, require
+          literal `CONFIRM` (uppercase, exact) — NOT `y`/`yes`.
+        - For other pre-execute triggers (Connected App scope reduction,
+          Platform Event field removal, callout endpoint change, webhook
+          URL pattern change, scope=large, inaccurate claims) accept
+          `y` / `yes` (case-insensitive).
+        - Always accept `n` / `no` / empty to abort.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Show the engineer the plan summary, the downstream impact summary,
+      and the trigger reason(s). Wait for response. Emit structured output.
+
+      If the engineer aborts, the workflow stops cleanly. No code is
+      changed; no Jira transition occurs; the run log records the abort.
+    depends_on: [plan, classify-sub-type, smoke-validate-claims]
+    when: >-
+      $classify-sub-type.output.sub_type == 'delete-named-credential' ||
+      $classify-sub-type.output.sub_type == 'delete-platform-event' ||
+      $classify-sub-type.output.sub_type == 'delete-connected-app' ||
+      ($classify-sub-type.output.sub_type == 'modify-named-credential' &&
+       $classify-sub-type.output.endpoint_or_auth_changes == 'true') ||
+      ($classify-sub-type.output.sub_type == 'modify-connected-app' &&
+       $classify-sub-type.output.scopes_reduced_or_callback_changed == 'true') ||
+      ($classify-sub-type.output.sub_type == 'modify-platform-event' &&
+       $classify-sub-type.output.pe_field_removed_or_type_changed == 'true') ||
+      ($classify-sub-type.output.sub_type == 'modify-callout' &&
+       $classify-sub-type.output.callout_endpoint_changes == 'true') ||
+      ($classify-sub-type.output.sub_type == 'modify-webhook-handler' &&
+       $classify-sub-type.output.webhook_url_pattern_changes == 'true') ||
+      $classify-sub-type.output.scope == 'large' ||
+      $smoke-validate-claims.output.claims_accurate == 'false'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: EXECUTE
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: execute
+    command: sf-integration-change-execute
+    depends_on: [plan, gate-pre-execute]
+    trigger_rule: none_failed_min_one_success
+    when: "$gate-pre-execute.output.proceed != 'false'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: VALIDATE
+  # Composite — the command internally orchestrates:
+  #   • scripts/deploy-to-scratch.sh   (callout + NC + Connected App + PE)
+  #   • scripts/run-apex-tests.sh      (HTTP-mocked tests per apex-callout-pattern.md)
+  #   • pattern-compliance check       (inline: Named Credential, timeout, Result, transient/permanent)
+  #   • webhook-handler-auth check     (inline: any auth mechanism on @RestResource)
+  #   • pe-subscriber-consistency      (inline: grep subscribers; check shape)
+  #   • credentials-hygiene check      (inline: literal-secret regex per ADR-0008)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    command: sf-integration-change-validate
+    depends_on: [execute]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6.5: GATE (post-validate, for compliance/hygiene failures)
+  # Fires when validate flagged:
+  #   - callout without explicit timeout
+  #   - callout without transient/permanent error split
+  #   - webhook handler with no authentication check
+  #   - PE subscriber consistency issues (subscriber refs removed/
+  #     type-changed field)
+  #   - credentials hygiene match
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-post-validate
+    prompt: |
+      You are the in-workflow confirm gate (post-validate). The integration-
+      specific compliance checks flagged issues that need engineer judgment
+      before the workflow continues to document / update-jira.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Validation results:
+        Deploy to scratch:        $validate.output.deploy_result
+        Apex tests:               $validate.output.tests_result   (coverage threshold: $validate.output.coverage_threshold)
+        Pattern compliance:       $validate.output.pattern_compliance_result
+        Webhook auth check:       $validate.output.webhook_auth_result
+        PE subscriber check:      $validate.output.pe_subscriber_result
+        Credentials hygiene:      $validate.output.credentials_hygiene_result
+
+      Issues found:
+        <list per the validate output's `failure_reasons`>
+
+      Acceptance:
+        - If credentials_hygiene_result == 'fail':  require literal `CONFIRM`.
+          The engineer is acknowledging EITHER (a) a leaked credential that
+          has been rotated before this confirmation, OR (b) a false positive
+          (test fixture, deliberately mock token). The confirmation is
+          logged with the matched pattern for the audit trail.
+        - If webhook_auth_result == 'fail':         require literal `CONFIRM`.
+          An unauthenticated public webhook endpoint is a deliberate
+          posture that needs explicit acknowledgement.
+        - For pattern_compliance and pe_subscriber issues only: accept `y`/`yes`.
+        - Always accept `n`/`no`/empty to abort.
+
+      If you abort here, the code change remains in the working tree but
+      no docs are written, no Jira comment is posted, and the run log
+      records the abort. The engineer can fix and re-run, or revert.
+
+      CRITICAL: do NOT echo the matched credential value into your output
+      or your reasoning field. The audit trail records the FILE:LINE and
+      the PATTERN MATCHED, never the matched value. Per ADR-0008.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Surface the validation details to the engineer, get their response,
+      emit structured output.
+    depends_on: [validate]
+    when: >-
+      $validate.output.pattern_compliance_result == 'fail' ||
+      $validate.output.webhook_auth_result == 'fail' ||
+      $validate.output.pe_subscriber_result == 'fail' ||
+      $validate.output.credentials_hygiene_result == 'fail'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: DOCUMENT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document
+    command: sf-integration-change-document
+    depends_on: [validate, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      $gate-post-validate.output.proceed != 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: UPDATE JIRA
+  # Suppressed when --orchestrated true is in $ARGUMENTS per ADR-0017 §"Family workflow
+  # contract": the orchestrator posts ONE consolidated comment per ticket;
+  # family workflows in orchestrated mode skip their own Jira write-back.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: update-jira-success
+    command: update-jira-on-completion
+    depends_on: [document, validate]
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      ! $ARGUMENTS contains '--orchestrated true'
+    context: fresh
+
+  - id: update-jira-failure
+    command: update-jira-on-failure
+    depends_on: [validate, gate-pre-execute, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      ($validate.output.overall_result == 'fail' ||
+       $gate-pre-execute.output.proceed == 'false' ||
+       $gate-post-validate.output.proceed == 'false') &&
+      ! $ARGUMENTS contains '--orchestrated true'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 9: LOG + COST + family_result
+  # Always fires, whether orchestrated or not. Emits:
+  #   1. line to _internal/harness-runs.log (per ADR-0009 §10)
+  #   2. JSONL record to _internal/cost-log.jsonl (per ADR-0016)
+  #   3. family_result JSON to disk (when orchestrated; per ADR-0017
+  #      §"Family workflow contract") at
+  #      _internal/orchestrator-runs/$ORCHESTRATOR_RUN_ID/sf-integration-change.json
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-workflow-run
+    # Use Archon nested-field substitution; shell defaults guard against
+    # unset variables for skipped nodes (gate-pre-execute, gate-post-validate
+    # may not fire). Matches the sf-apex-change.yaml pattern.
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      SUB_TYPE="$classify-sub-type.output.sub_type"
+      SCOPE="$classify-sub-type.output.scope"
+      EXTERNAL_SYSTEM="$classify-sub-type.output.external_system"
+
+      VALIDATE_RESULT="${validate_output_overall_result:-skipped}"
+      PRE_GATE_DECISION="${gate_pre_execute_output_proceed:-skipped}"
+      POST_GATE_DECISION="${gate_post_validate_output_proceed:-skipped}"
+
+      [ "$validate.output.overall_result" != "" ] && VALIDATE_RESULT="$validate.output.overall_result" || true
+      [ "$gate-pre-execute.output.proceed" != "" ] && PRE_GATE_DECISION="$gate-pre-execute.output.proceed" || true
+      [ "$gate-post-validate.output.proceed" != "" ] && POST_GATE_DECISION="$gate-post-validate.output.proceed" || true
+
+      if [ "$VALIDATE_RESULT" = "pass" ] && [ "$PRE_GATE_DECISION" != "false" ] && [ "$POST_GATE_DECISION" != "false" ]; then
+        RESULT="success"
+      else
+        RESULT="failure"
+      fi
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  %s  sf-integration-change  sub_type=%s  scope=%s  system=%s  result=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${SUB_TYPE}" "${SCOPE}" "${EXTERNAL_SYSTEM}" "${RESULT}" \
+        >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. Heuristic estimate (nodes by model × rates).
+      # sf-integration-change typical shape: ~2 haiku, ~9 sonnet, ~2 opus[1m], ~4 bash.
+      # Cost driver is the opus[1m] execute + document nodes; integration changes
+      # are slightly heavier than apex-only because the document step walks
+      # multiple integration docs + object docs + security doc.
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_INPUT_TOKENS=420000
+      EST_OUTPUT_TOKENS=48000
+      EST_COST_USD=$(python3 -c "
+input_tok = $EST_INPUT_TOKENS / 1_000_000
+output_tok = $EST_OUTPUT_TOKENS / 1_000_000
+cost = (input_tok * 0.7 * 20) + (output_tok * 0.7 * 100) + (input_tok * 0.3 * 3) + (output_tok * 0.3 * 15)
+print(f'{cost:.2f}')
+")
+
+      # Match other families' escaped-quote pattern + string "orchestrated"
+      # (other families use the string form; readers tolerate either but
+      # consistency matters for cost-summary.sh aggregation).
+      ORCHESTRATED_STR="false"
+      printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true' && ORCHESTRATED_STR="true"
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-integration-change\",\"ticket\":\"%s\",\"engagement\":\"%s\",\"harness_version\":\"%s\",\"nodes\":{\"haiku\":2,\"sonnet\":9,\"opus_1m\":2,\"bash\":4},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"%s\",\"sub_type\":\"%s\",\"scope\":\"%s\",\"external_system\":\"%s\",\"orchestrated\":\"%s\"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" "${RESULT}" "${SUB_TYPE}" "${SCOPE}" \
+        "${EXTERNAL_SYSTEM}" "${ORCHESTRATED_STR}" \
+        >> "$COST_LOG"
+
+      # Orchestrated-mode contract per ADR-0017: when running under
+      # sf-orchestrator, emit family_result.json to the orchestrator's
+      # collection directory ON DISK. The orchestrator's
+      # invoke-families-in-sequence reads the file (not stdout).
+      if printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true'; then
+        if [ -z "${ORCHESTRATOR_RUN_ID:-}" ]; then
+          echo "  ⚠ --orchestrated true but ORCHESTRATOR_RUN_ID is unset; can't emit family_result.json" >&2
+        else
+          ORCHESTRATOR_DIR="_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}"
+          mkdir -p "$ORCHESTRATOR_DIR"
+          FAMILY_RESULT_FILE="$ORCHESTRATOR_DIR/sf-integration-change.json"
+
+          FILES_CHANGED="${execute_output_files_changed_actual:-[]}"
+          DEPLOY_RESULT="${validate_output_deploy_result:-unknown}"
+          TESTS_RESULT="${validate_output_tests_result:-unknown}"
+          PATTERN_RESULT="${validate_output_pattern_compliance_result:-unknown}"
+          WEBHOOK_AUTH_RESULT="${validate_output_webhook_auth_result:-unknown}"
+          PE_SUBSCRIBER_RESULT="${validate_output_pe_subscriber_result:-unknown}"
+          CRED_HYGIENE_RESULT="${validate_output_credentials_hygiene_result:-unknown}"
+          DOC_UPDATES="${document_output_docs_updated:-[]}"
+          DOC_CREATED="${document_output_docs_created:-[]}"
+
+          if [ "$PRE_GATE_DECISION" = "false" ] || [ "$POST_GATE_DECISION" = "false" ]; then
+            FAMILY_STATUS="gate-aborted"
+          elif [ "$RESULT" = "success" ]; then
+            FAMILY_STATUS="success"
+          else
+            FAMILY_STATUS="failure"
+          fi
+
+          python3 <<PYEOF
+      import json
+      result = {
+          "family": "sf-integration-change",
+          "status": "$FAMILY_STATUS",
+          "ticket": "$TICKET",
+          "sub_type": "$SUB_TYPE",
+          "scope": "$SCOPE",
+          "external_system": "$EXTERNAL_SYSTEM",
+          "files_changed_actual": $FILES_CHANGED,
+          "validation_results": {
+              "deploy": "$DEPLOY_RESULT",
+              "tests": "$TESTS_RESULT",
+              "pattern_compliance": "$PATTERN_RESULT",
+              "webhook_auth": "$WEBHOOK_AUTH_RESULT",
+              "pe_subscriber": "$PE_SUBSCRIBER_RESULT",
+              "credentials_hygiene": "$CRED_HYGIENE_RESULT",
+              "overall": "$VALIDATE_RESULT",
+          },
+          "doc_updates": {
+              "created": $DOC_CREATED,
+              "updated": $DOC_UPDATES,
+          },
+          "errors": [],
+      }
+      with open("$FAMILY_RESULT_FILE", "w") as out:
+          json.dump(result, out, indent=2)
+      PYEOF
+          echo "  → family_result.json written for orchestrator: $FAMILY_RESULT_FILE"
+        fi
+      fi
+    depends_on: [update-jira-success, update-jira-failure, document, validate]
+    trigger_rule: none_failed_min_one_success

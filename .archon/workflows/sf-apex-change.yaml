@@ -7,9 +7,17 @@ description: |
   Invoked by sf-dispatcher (`/sf <TICKET>` → classifier picks this workflow
   → dispatcher's confirm gate → `archon run sf-apex-change ...`).
 
+  Per [ADR-0017](../decisions/0017-multi-family-orchestrator.md): also
+  invokable in **orchestrated mode** by `sf-orchestrator` for multi-family
+  tickets. When `--orchestrated true` is in $ARGUMENTS:
+  - update-jira-success and update-jira-failure are suppressed (orchestrator
+    handles the consolidated Jira write-back).
+  - log-workflow-run emits family_result.json to
+    `_internal/orchestrator-runs/$ORCHESTRATOR_RUN_ID/sf-apex-change.json`
+    in addition to its normal run-log + cost-log entries.
+
   Inputs:
-    $ARGUMENTS — passed by sf-dispatcher's bash invoke node:
-                  `--ticket <KEY> --description "<text>"`
+    $ARGUMENTS — `<TICKET-KEY> [--orchestrated true] "<description>"`
 
   Structural backbone per ADR-0003:
     1. extract-jira-key             (deterministic)
@@ -444,10 +452,21 @@ nodes:
   # ready_for_dev). Only one fires per run.
   # ═══════════════════════════════════════════════════════════════
 
+  # Orchestrated-mode contract per ADR-0017: when running under
+  # sf-orchestrator, the orchestrator handles Jira write-back. Both
+  # update-jira-* nodes have an extra when: clause that suppresses them.
+  # `$ORCHESTRATED` is read from the orchestrated arg in $ARGUMENTS
+  # via a bash extract — when ARGUMENTS contains '--orchestrated true',
+  # the agent's reading of $ARGUMENTS treats this as the standard
+  # signal. (The dispatcher omits this flag for single-family invocations,
+  # so the default behavior is unchanged.)
+
   - id: update-jira-success
     command: update-jira-on-completion
     depends_on: [document, validate]
-    when: "$validate.output.overall_result == 'pass'"
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      ! $ARGUMENTS contains '--orchestrated true'
     context: fresh
 
   - id: update-jira-failure
@@ -455,9 +474,10 @@ nodes:
     depends_on: [validate, gate-pre-execute, gate-post-validate]
     trigger_rule: none_failed_min_one_success
     when: >-
-      $validate.output.overall_result == 'fail' ||
-      $gate-pre-execute.output.proceed == 'false' ||
-      $gate-post-validate.output.proceed == 'false'
+      ($validate.output.overall_result == 'fail' ||
+       $gate-pre-execute.output.proceed == 'false' ||
+       $gate-post-validate.output.proceed == 'false') &&
+      ! $ARGUMENTS contains '--orchestrated true'
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -523,5 +543,43 @@ print(f'{cost:.2f}')
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
         "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" "${RESULT}" "${SUB_TYPE}" "${SCOPE}" \
         >> "$COST_LOG"
+
+      # Orchestrated-mode contract per ADR-0017: when running under
+      # sf-orchestrator, emit family_result.json to the orchestrator's
+      # collection directory. The orchestrator reads this after
+      # invoke-families-in-sequence to aggregate per-family results into
+      # one consolidated Jira comment.
+      if printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true'; then
+        if [ -z "${ORCHESTRATOR_RUN_ID:-}" ]; then
+          echo "  ⚠ --orchestrated true but ORCHESTRATOR_RUN_ID is unset; can't emit family_result.json" >&2
+        else
+          ORCHESTRATOR_DIR="_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}"
+          mkdir -p "$ORCHESTRATOR_DIR"
+          FAMILY_RESULT_FILE="$ORCHESTRATOR_DIR/sf-apex-change.json"
+
+          python3 <<PYEOF
+      import json
+      result = {
+          "family": "sf-apex-change",
+          "status": "$RESULT",
+          "ticket": "$TICKET",
+          "sub_type": "$SUB_TYPE",
+          "scope": "$SCOPE",
+          "files_changed_actual": [],  # populated from $execute.output if available
+          "validation_results": {
+              "deploy": "${validate_output_deploy_result:-unknown}",
+              "tests": "${validate_output_tests_result:-unknown}",
+              "fls_crud": "${validate_output_fls_crud_result:-unknown}",
+              "destructive": "${validate_output_destructive_result:-unknown}",
+          },
+          "doc_updates": [],            # populated from $document.output if available
+          "errors": [],
+      }
+      with open("$FAMILY_RESULT_FILE", "w") as out:
+          json.dump(result, out, indent=2)
+      PYEOF
+          echo "  → family_result.json written for orchestrator: $FAMILY_RESULT_FILE"
+        fi
+      fi
     depends_on: [update-jira-success, update-jira-failure]
     trigger_rule: none_failed_min_one_success

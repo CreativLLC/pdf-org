@@ -27,6 +27,9 @@ A pattern that can't answer those isn't ready to be canon.
 | [`fls-crud-enforcement.md`](./fls-crud-enforcement.md) | Apex | Enforce field-level security and CRUD permissions on user-driven operations |
 | [`bulkified-soql-update.md`](./bulkified-soql-update.md) | Apex | Never SOQL or DML inside loops; structure for bulk safety |
 | [`testdatafactory-usage.md`](./testdatafactory-usage.md) | Apex tests | All test data goes through `TestDataFactory`; never inline `INSERT new Account(...)` |
+| [`apex-callout-pattern.md`](./apex-callout-pattern.md) | Apex callouts | HTTP callouts via Named Credential + service class + structured Result wrapper + transient-vs-permanent error distinction |
+| [`queueable-async-pattern.md`](./queueable-async-pattern.md) | Async Apex | Modern async via `Queueable` — for callouts-after-DML, chained work, deferred computation up to ~10K records |
+| [`batch-apex-pattern.md`](./batch-apex-pattern.md) | Batch Apex | Mass operations (10K+ records) via `Database.Batchable` — fresh governor limits per chunk, `Database.Stateful` for cross-chunk accumulation |
 
 ## Per-engagement overrides
 

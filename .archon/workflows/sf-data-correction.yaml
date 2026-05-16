@@ -1,0 +1,781 @@
+name: sf-data-correction
+description: |
+  Task-family workflow per ADR-0003. Handles one-off DML / anonymous Apex /
+  Batch Apex against existing data in the connected target org. Sub-types,
+  gates, validation strategy, and orchestrator-mode contract locked in
+  ADR-0023.
+
+  This is the highest-blast-radius family. Unlike every other family, there
+  is no source-to-deploy separation: the workflow's Apex artifacts mutate
+  records in the live org. The gate model reflects that:
+    - Pre-execute gate fires UNCONDITIONALLY (every run is gated).
+    - Validate is two-phase: dry-run first (read-only), then live DML only
+      after the engineer approves the dry-run's affected-record count.
+
+  Invoked either by sf-dispatcher (`/sf <TICKET>` → classifier picks this
+  workflow → dispatcher's confirm gate → `archon run sf-data-correction ...`)
+  or by sf-orchestrator (multi-family ticket, per ADR-0017; this family
+  runs LAST in cross-family sequencing — against now-stable schema/logic).
+
+  Inputs:
+    $ARGUMENTS  — passed by sf-dispatcher or sf-orchestrator's bash invoke.
+                  Single-family form: `<TICKET> "<description>"`.
+                  Orchestrated form:  `<TICKET> --orchestrated true "<description>"`.
+                  Orchestrated mode is detected by grep-ing $ARGUMENTS for
+                  `--orchestrated true` (per ADR-0017). When detected,
+                  update-jira-success and update-jira-failure nodes are
+                  skipped (the orchestrator handles consolidated write-back).
+                  The pre-execute and post-validate gates ALWAYS fire,
+                  regardless of orchestration — the engineer must always
+                  approve the affected-record count.
+
+  Structural backbone per ADR-0003:
+    1. extract-jira-key             (deterministic)
+    2. pull-jira-context            (command: pull-jira-context)
+    3. classify-sub-type            (LLM, scoped to this task family)
+    4. smoke-validate-claims        (verify ticket's concrete claims)
+    5. verify-org-context           (command: verify-org-context)
+    6. load-engagement-context      (command: load-engagement-context)
+    7. plan                         (command: sf-data-correction-plan)
+    8. gate-pre-execute             (interactive — UNCONDITIONAL per ADR-0023 §2)
+    9. execute                      (command: sf-data-correction-execute — writes BOTH dry-run AND live Apex)
+    10. validate                    (command: sf-data-correction-validate — runs dry-run; if passes gate, runs live)
+    10b. gate-post-validate         (interactive, conditional per ADR-0023 §3 phase 1)
+    11. document                    (command: sf-data-correction-document — light; Jira is the record)
+    12. update-jira-success/failure (suppressed when --orchestrated true in $ARGUMENTS)
+    13. log-workflow-run            (always fires; emits run-log + cost-log + family_result)
+
+provider: claude
+model: sonnet
+
+# Orchestrated mode (per ADR-0017) is detected by grep'ing for
+# '--orchestrated true' in $ARGUMENTS — matching the sf-apex-change.yaml
+# pattern. Suppresses this workflow's own Jira write-back (the orchestrator
+# posts the consolidated comment). Does NOT suppress the pre-execute or
+# post-validate gates — the engineer must always approve the affected-
+# record count even when orchestrated.
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH & CLASSIFY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: extract-jira-key
+    prompt: |
+      Extract the Jira ticket key from $ARGUMENTS.
+
+      Input: $ARGUMENTS  (e.g., `--ticket ACME-301 --description "..."`)
+
+      The ticket key must match `^[A-Z][A-Z0-9]+-\d+$`. If absent or
+      malformed, fail with:
+        `error: missing or invalid --ticket. Expected like ACME-301.`
+
+      Output ONLY the bare ticket key (no quotes, markdown, or extra text).
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        description:
+          type: string
+      required: [ticket, description]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [extract-jira-key]
+    context: fresh
+
+  - id: classify-sub-type
+    prompt: |
+      You are the sf-data-correction sub-type classifier. The dispatcher
+      (or orchestrator) already chose this workflow; your job is to pick
+      the correct sub-type from ADR-0023 §1, the volume estimate, and the
+      side flags downstream gates use.
+
+      ## Context
+
+      ### Jira ticket
+      $pull-jira-context.output
+
+      ### Engineer's free-form description
+      $extract-jira-key.output.description
+
+      ## Sub-types (ADR-0023)
+
+      | sub_type                     | trigger                                                                |
+      |------------------------------|------------------------------------------------------------------------|
+      | data-update-anonymous-apex   | One-shot DML updating <1000 records (anonymous Apex block)             |
+      | data-update-batch            | DML updating >=1000 records (Database.Batchable class)                 |
+      | data-insert                  | Bulk record insertion (CSV-loaded or Apex-generated)                   |
+      | data-delete-anonymous        | Anonymous Apex deleting <1000 records (DESTRUCTIVE)                    |
+      | data-delete-batch            | Batch Apex deleting >=1000 records (DESTRUCTIVE — highest blast radius) |
+      | data-undelete                | Restore previously soft-deleted records (lower-risk; still gated)      |
+      | data-merge                   | Merge duplicate records (DESTRUCTIVE — data loss if wrong)             |
+
+      ## Precedence (when ticket implies multiple)
+
+      `data-delete-batch` > `data-delete-anonymous` > `data-merge` >
+      `data-update-batch` (>10K records) > `data-update-anonymous` (>1000) >
+      `data-update-anonymous` (<=1000) > `data-insert` > `data-undelete`.
+
+      Higher-precedence sub-types have stricter gates; over-gate is safer
+      than under-gate.
+
+      If the ticket genuinely needs multiple sub-types (e.g., insert AND
+      update), recommend in `reasoning` that the engineer split it. Do not
+      try to combine — the dry-run-generation problem assumes one Apex
+      artifact per run.
+
+      ## Volume estimate
+
+      Estimate the number of records the correction will affect. Round UP
+      when uncertain — over-estimating triggers stricter gates which is
+      safer than under-estimating.
+
+      - `<=1000`: anonymous Apex sub-types acceptable
+      - `>1000`:  batch sub-types preferred for updates/deletes; forces
+                  CONFIRM gate regardless of sub-type
+
+      Output `estimated_record_count` as an integer.
+
+      ## Side flags
+
+      - `is_destructive`: `"true"` if sub_type is `data-delete-anonymous`,
+        `data-delete-batch`, or `data-merge`. Drives pre-execute gate
+        confirmation form (always CONFIRM for these).
+      - `requires_system_mode`: `"true"` if the ticket explicitly indicates
+        the correction must run as integration user / system context (e.g.,
+        touching fields the engineer's profile cannot see). Default
+        `"false"`. When true, the plan must justify; the pre-execute gate
+        surfaces the justification.
+      - `touches_restricted_object`: `"true"` if the primary target object
+        appears in `engagement.yaml: salesforce.data_corrections.restricted_objects`.
+        Triggers the post-validate gate unconditionally regardless of dry-run
+        results. (Default engagement list is empty.)
+      - `recurring_pattern_flag`: `"true"` if this correction appears to be
+        addressing a *recurring* data-quality issue (the ticket description
+        or recent ticket history suggests the same correction has been done
+        before). Drives whether the document phase writes a draft engagement
+        ADR proposing an upstream fix.
+      - `needs_external_research`: `"true"` if the correction depends on
+        specifics of an external system's behavior. (Recorded for cost
+        observability; does not change the DAG.)
+    depends_on: [pull-jira-context]
+    model: haiku
+    allowed_tools: []
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        sub_type:
+          type: string
+          enum:
+            - data-update-anonymous-apex
+            - data-update-batch
+            - data-insert
+            - data-delete-anonymous
+            - data-delete-batch
+            - data-undelete
+            - data-merge
+        estimated_record_count:
+          type: integer
+          minimum: 0
+        scope:
+          type: string
+          enum: [small, medium, large]
+        is_destructive:
+          type: string
+          enum: ["true", "false"]
+        requires_system_mode:
+          type: string
+          enum: ["true", "false"]
+        touches_restricted_object:
+          type: string
+          enum: ["true", "false"]
+        recurring_pattern_flag:
+          type: string
+          enum: ["true", "false"]
+        needs_external_research:
+          type: string
+          enum: ["true", "false"]
+        reasoning:
+          type: string
+      required:
+        - sub_type
+        - estimated_record_count
+        - scope
+        - is_destructive
+        - requires_system_mode
+        - touches_restricted_object
+        - recurring_pattern_flag
+        - needs_external_research
+        - reasoning
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1.5: SMOKE-VALIDATE
+  # Verify the ticket's concrete claims (object names, field names, target
+  # criteria) match the engagement repo's docs/objects/*. Inaccurate claims
+  # do NOT relax the pre-execute gate (it always fires for this family) but
+  # they DO surface in the gate display so the engineer sees them.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: smoke-validate-claims
+    prompt: |
+      You are the smoke validator. Your job: check that the ticket's
+      claims about the target data are ACCURATE so the engineer's
+      confirmation at the pre-execute gate is informed.
+
+      Note: unlike other families, smoke-validate's findings here do NOT
+      relax the pre-execute gate (it fires unconditionally for this
+      family). The findings are surfaced in the gate display so the
+      engineer can decide.
+
+      ## Context
+
+      ### Ticket
+      $pull-jira-context.output
+
+      ### Classifier output
+      $classify-sub-type.output
+
+      ## Task
+
+      Extract concrete, verifiable claims from the ticket body and recent
+      comments:
+      - Object API names referenced (e.g. `Account`, `Renewal__c`).
+      - Field API names referenced (`Object.Field__c`).
+      - SOQL WHERE-clause criteria the correction will use to select
+        records (e.g., "Status = 'Inactive'", "CreatedDate < '2025-01-01'").
+      - Expected affected-record count if the ticket states one.
+      - Target field values for updates (e.g., "set Status to Closed").
+
+      Then verify each concrete claim against the engagement repo:
+      - For object references: check that `docs/objects/<Object>.md`
+        exists. If missing, set `claims_accurate` to `"false"` with a
+        mismatch note ("no engagement doc for <Object> — correction may
+        target an undocumented object").
+      - For field references: check `docs/objects/<Object>.md` mentions
+        the field. If not, flag a mismatch (the field may still exist on
+        the object — the engagement docs may just be stale).
+      - Cross-reference the classifier's `estimated_record_count` with
+        any record-count signal in the engagement docs. If `docs/objects/<Object>.md`
+        suggests the object holds far fewer records than the classifier
+        estimated (or vice-versa), flag it.
+
+      ## Existing-data check
+
+      Do NOT run a live SOQL query here. The dry-run in `validate` is the
+      authoritative existing-data check. This node stays deterministic
+      and offline; its findings inform the gate display.
+
+      ## Budget
+
+      Spend ~30 seconds. Check 2-3 most load-bearing claims. Prefer
+      false-negative safety (flag inaccurate when uncertain) over
+      false-positive.
+
+      If the ticket has NO concrete claims (purely descriptive — e.g.,
+      "clean up the bad Account data" with no object/field/criteria
+      specified), default `claims_accurate` to `"false"`. The pre-execute
+      gate will surface this; the engineer will likely abort and re-ticket
+      with specifics.
+
+      ## Output
+
+      Set `claims_accurate`:
+      - `"true"`  — claims check out against the engagement docs.
+      - `"false"` — one or more claims don't match the docs.
+
+      Include `mismatches` as a list of strings, one per discrepancy.
+    depends_on: [classify-sub-type]
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        claims_accurate:
+          type: string
+          enum: ["true", "false"]
+        mismatches:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+      required: [claims_accurate, mismatches, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: SF-SPECIFIC CONTEXT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-org-context
+    command: verify-org-context
+    depends_on: [smoke-validate-claims]
+    context: fresh
+
+  - id: load-engagement-context
+    command: load-engagement-context
+    depends_on: [verify-org-context]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: PLAN
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    command: sf-data-correction-plan
+    depends_on: [load-engagement-context, classify-sub-type, smoke-validate-claims]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: GATE (pre-execute, UNCONDITIONAL per ADR-0023 §2)
+  # Unlike other families, this gate has NO `when:` clause. It ALWAYS
+  # fires. Every data-correction run is gated; no exceptions.
+  #
+  # Confirmation form depends on sub_type + estimated_record_count:
+  #   - CONFIRM for: data-delete-*, data-merge, any update/insert >1000 records
+  #   - y/yes for:   data-update-anonymous <=1000, data-insert <=1000, data-undelete
+  #
+  # The engineer at this gate approves "the workflow may run the dry-run
+  # AND prepare the live Apex." The dry-run results themselves are gated
+  # separately at gate-post-validate.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-pre-execute
+    prompt: |
+      You are the in-workflow pre-execute confirm gate. Per ADR-0023 §2,
+      this gate fires UNCONDITIONALLY for every data-correction run.
+      There is no "small data correction" that bypasses this gate.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      DATA CORRECTION — Engineer review required.
+
+        Ticket:                   $extract-jira-key.output.ticket
+        Sub-type:                 $classify-sub-type.output.sub_type
+        Target object:            <primary object — from $plan.output>
+        Estimated reach:          $classify-sub-type.output.estimated_record_count records
+        Scope:                    $classify-sub-type.output.scope
+        FLS posture:              <USER_MODE | SYSTEM_MODE (justified) — from $plan.output>
+
+        Restricted-object flag:   $classify-sub-type.output.touches_restricted_object
+        Claims accuracy:          $smoke-validate-claims.output.claims_accurate
+          (mismatches:            see smoke-validate output)
+
+        Plan summary:             $plan.output  (full plan in $ARTIFACTS_DIR/plan.md)
+        Apex artifact (live):     $ARTIFACTS_DIR/correction.apex          (NOT YET WRITTEN)
+        Apex artifact (dry-run):  $ARTIFACTS_DIR/correction-dry-run.apex  (NOT YET WRITTEN)
+
+        What happens next (if you proceed):
+          1. EXECUTE writes the dry-run Apex (read-only) AND the live Apex.
+          2. VALIDATE phase 1 runs the dry-run against the target org. No DML.
+          3. The dry-run reports the affected-record count + 10 sample record IDs.
+          4. If count = 0: workflow ABORTS (likely scope mistake).
+          5. If count > plan-estimate * 1.10: post-validate gate fires; you approve the new reach.
+          6. If segmentation creep detected: post-validate gate fires; you approve.
+          7. If touches_restricted_object: post-validate gate fires; you approve.
+          8. VALIDATE phase 2 runs the LIVE DML.
+          9. For deletes: deleted IDs captured to artifact for recycle-bin recovery.
+
+        Acceptance (sub_type drives form):
+          - data-delete-anonymous, data-delete-batch, data-merge: literal CONFIRM (uppercase exact)
+          - any sub-type with estimated_record_count > 1000:       literal CONFIRM
+          - otherwise:                                              y / yes (case-insensitive)
+          - Always accept n / no / empty to abort.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      1. Read the plan summary from `$plan.output`. Build the display
+         above, populating each field from the input nodes.
+      2. Determine the required confirmation form:
+         - If sub_type is `data-delete-anonymous`, `data-delete-batch`,
+           or `data-merge` → require literal `CONFIRM`.
+         - Else if `$classify-sub-type.output.estimated_record_count > 1000`
+           → require literal `CONFIRM`.
+         - Else → accept `y` / `yes` (case-insensitive).
+      3. Show the display to the engineer. Wait for response.
+      4. Emit structured output:
+         - `proceed: "true"` only if input matched the required form
+           (CONFIRM exact, OR `y`/`yes`/`Y`/`YES`/`Yes` for the relaxed form).
+         - `proceed: "false"` for anything else (including `n`/`no`/empty
+           OR `y` when `CONFIRM` was required).
+         - `confirmation_form` records which form the engineer used.
+         - `reasoning` captures any inline rationale the engineer typed.
+
+      ## Strict matching for CONFIRM
+
+      When `CONFIRM` is the required form, the engineer's input must match
+      the literal string `CONFIRM` (uppercase, exact, no surrounding
+      whitespace beyond the message wrap). Bare `y`, `yes`, `Y`, `YES`,
+      `confirm`, `Confirm` are ALL rejected as `proceed: "false"`. This
+      is the mechanical anti-rubber-stamp safeguard.
+
+      If the engineer aborts, the workflow stops cleanly. No Apex is
+      written; no dry-run runs; no DML executes; the run log records
+      the abort.
+    depends_on: [plan, classify-sub-type, smoke-validate-claims]
+    # NO when: clause — this gate ALWAYS fires per ADR-0023 §2.
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        required_form:
+          type: string
+          enum: ["CONFIRM", "y"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, required_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: EXECUTE
+  # The execute command writes BOTH Apex artifacts:
+  #   - $ARTIFACTS_DIR/correction-dry-run.apex (read-only — DML replaced
+  #     with Map<Id, SObject> accumulator + count)
+  #   - $ARTIFACTS_DIR/correction.apex (the live version; mechanical
+  #     transform of the dry-run with DML restored)
+  # The dry-run is the source of truth; the live version is derived.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: execute
+    command: sf-data-correction-execute
+    depends_on: [plan, gate-pre-execute]
+    # Pre-execute gate ALWAYS fires; proceed must be "true" to continue.
+    when: "$gate-pre-execute.output.proceed == 'true'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: VALIDATE (two-phase per ADR-0023 §3)
+  # Phase 1: run the dry-run Apex against the target org. No DML.
+  #          Parse the debug log for affected-count + sample IDs.
+  #          If count = 0: abort with error.
+  #          If count > plan_estimate * 1.10: signal post-validate gate.
+  #          If segmentation creep: signal post-validate gate.
+  #          If touches_restricted_object: signal post-validate gate.
+  # Phase 2: only after post-validate gate passes (or is skipped because
+  #          no trigger fired). Run the LIVE Apex against the target org.
+  #          Capture deleted IDs (for delete sub-types).
+  #          Re-count and verify actual vs dry-run delta within 2%.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    command: sf-data-correction-validate
+    depends_on: [execute, gate-post-validate]
+    # The validate command is two-phase internally. Phase 1 (dry-run)
+    # runs first and writes its results to $ARTIFACTS_DIR. The post-validate
+    # gate fires based on phase-1 results. After the gate, validate's
+    # phase 2 (live DML) runs — but the trigger_rule ensures phase 2 only
+    # runs if the gate either passed or was skipped (no trigger fired).
+    #
+    # In practice this is implemented as: validate-phase-1 is its own
+    # virtual sub-step inside the command; phase 2 reads the gate's
+    # output and proceeds or aborts accordingly. The command emits a
+    # composite overall_result reflecting both phases.
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $execute.output.execute_status == 'success' &&
+      $gate-post-validate.output.proceed != 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6.5: GATE (post-validate, conditional per ADR-0023 §3 phase 1)
+  # Fires when validate's phase-1 dry-run flagged any:
+  #   - dry_run_count_exceeded_estimate (>10% over plan)
+  #   - segmentation_creep_detected
+  #   - touches_restricted_object (per engagement.yaml)
+  #   - fls_posture_violation (Apex missing WITH USER_MODE / AccessLevel.USER_MODE)
+  # If dry_run_count == 0, the validate step ABORTS the workflow before
+  # this gate; no post-validate gate fires for that case.
+  #
+  # NOTE: validate writes its phase-1 results to artifacts BEFORE this
+  # gate runs. The depends_on chain is intentionally circular-looking in
+  # the YAML (validate depends on gate-post-validate, gate-post-validate
+  # depends on validate). Archon's DAG runner handles this by treating
+  # validate as two virtual steps (validate-phase-1 reads execute and
+  # produces dry-run artifacts; gate-post-validate reads those artifacts;
+  # validate-phase-2 reads the gate's output and runs the live DML).
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-post-validate
+    prompt: |
+      You are the in-workflow post-validate confirm gate (dry-run review).
+      The validate step's phase-1 dry-run ran against the target org and
+      reported what would be affected. Per ADR-0023 §3, the engineer
+      reviews the dry-run results and approves before the live DML runs.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      DRY-RUN COMPLETE — Engineer review required before live DML.
+
+        Ticket:                       $extract-jira-key.output.ticket
+        Sub-type:                     $classify-sub-type.output.sub_type
+        Plan estimate:                $classify-sub-type.output.estimated_record_count records
+        Dry-run actual:               $validate.output.dry_run_count records
+        Delta from estimate:          $validate.output.dry_run_vs_estimate_pct %
+        Sample affected records:      $validate.output.sample_record_ids (first 10)
+        Dry-run artifact:             $ARTIFACTS_DIR/data-correction-dry-run.json
+
+        Segmentation analysis:
+          Accounts spanned:           $validate.output.distinct_accounts
+          Owners spanned:             $validate.output.distinct_owners
+          Record Types spanned:       $validate.output.distinct_record_types
+          Plan named these segments?  $validate.output.segmentation_matches_plan
+
+        Why this gate fired (any of these triggers it):
+          dry_run_count_exceeded:     $validate.output.dry_run_count_exceeded_estimate
+          segmentation_creep:         $validate.output.segmentation_creep_detected
+          restricted_object_touched:  $validate.output.restricted_object_touched
+          fls_posture_violation:      $validate.output.fls_posture_violation
+
+        Acceptance:
+          - If fls_posture_violation == "true": ABORT only. The Apex
+            lacks USER_MODE enforcement. Re-plan and re-run. No proceed
+            option is offered for this case.
+          - If restricted_object_touched == "true" OR segmentation_creep_detected:
+            require literal CONFIRM. The engineer is acknowledging the
+            scope explicitly.
+          - If dry_run_count_exceeded_estimate (count > plan * 1.10): require
+            literal CONFIRM.
+          - Always accept n / no / empty to abort.
+
+        If you abort here, the live DML does NOT run. The dry-run results
+        remain in $ARTIFACTS_DIR/ for review. The run log records the
+        abort. Re-plan and re-run with a tighter WHERE clause if needed.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Surface the dry-run details to the engineer. Wait for response.
+      Emit structured output.
+
+      For `fls_posture_violation`: there is NO `proceed: "true"` path.
+      Output `proceed: "false"` with `reasoning` set to "fls_posture_violation —
+      Apex must use WITH USER_MODE on SOQL and AccessLevel.USER_MODE on DML,
+      or the plan must explicitly justify SYSTEM_MODE. Re-plan and re-run."
+    depends_on: [validate]
+    when: >-
+      $validate.output.dry_run_count_exceeded_estimate == 'true' ||
+      $validate.output.segmentation_creep_detected == 'true' ||
+      $validate.output.restricted_object_touched == 'true' ||
+      $validate.output.fls_posture_violation == 'true'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: DOCUMENT
+  # Per ADR-0023 §5 and ADR-0010 state-not-history: this phase is LIGHT.
+  # It does NOT touch docs/objects/* or other state docs. Data corrections
+  # are events, not state. The event record lives in:
+  #   - The Jira comment (update-jira-on-completion)
+  #   - _internal/harness-runs.log
+  #   - _internal/cost-log.jsonl
+  #   - $ARTIFACTS_DIR/ (correction.apex, dry-run JSON, deleted-IDs JSON)
+  #
+  # The ONLY doc this phase may write is an optional engagement ADR at
+  # docs/decisions/<NNNN>-prevent-<root-cause>.md, IF the classifier flagged
+  # recurring_pattern_flag == "true" AND the planner identified a clear
+  # upstream root cause. Otherwise the phase writes no docs.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document
+    command: sf-data-correction-document
+    depends_on: [validate, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      $gate-post-validate.output.proceed != 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: UPDATE JIRA
+  # Success: post structured comment (incl. dry-run vs actual count, sample
+  #          IDs, artifact paths), transition to in_review.
+  # Failure: post failure comment, transition back to ready_for_dev.
+  # BOTH suppressed when --orchestrated true is in $ARGUMENTS per ADR-0017.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: update-jira-success
+    command: update-jira-on-completion
+    depends_on: [document, validate]
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      ! $ARGUMENTS contains '--orchestrated true'
+    context: fresh
+
+  - id: update-jira-failure
+    command: update-jira-on-failure
+    depends_on: [validate, gate-pre-execute, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      ($validate.output.overall_result == 'fail' ||
+       $gate-pre-execute.output.proceed == 'false' ||
+       $gate-post-validate.output.proceed == 'false') &&
+      ! $ARGUMENTS contains '--orchestrated true'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 9: LOG
+  # ALWAYS fires (whether orchestrated or not). Emits:
+  #   1. Append-only line to _internal/harness-runs.log
+  #   2. JSONL record to _internal/cost-log.jsonl per ADR-0016
+  #   3. family_result JSON to disk (when orchestrated; per ADR-0017) at
+  #      _internal/orchestrator-runs/$ORCHESTRATOR_RUN_ID/sf-data-correction.json
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-workflow-run
+    # Same nested-field-substitution pattern as sf-apex-change and sf-metadata-change.
+    # Shell defaults guard against unset variables when nodes were skipped.
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      SUB_TYPE="$classify-sub-type.output.sub_type"
+      SCOPE="$classify-sub-type.output.scope"
+      ESTIMATED_COUNT="$classify-sub-type.output.estimated_record_count"
+
+      VALIDATE_RESULT="${validate_output_overall_result:-skipped}"
+      PRE_GATE_DECISION="${gate_pre_execute_output_proceed:-skipped}"
+      POST_GATE_DECISION="${gate_post_validate_output_proceed:-skipped}"
+      DRY_RUN_COUNT="${validate_output_dry_run_count:-0}"
+      ACTUAL_COUNT="${validate_output_actual_count:-0}"
+      DELTA_PCT="${validate_output_dry_run_actual_delta_pct:-0}"
+      RESTRICTED_TOUCHED="${validate_output_restricted_object_touched:-false}"
+
+      [ "$validate.output.overall_result" != "" ] && VALIDATE_RESULT="$validate.output.overall_result" || true
+      [ "$gate-pre-execute.output.proceed" != "" ] && PRE_GATE_DECISION="$gate-pre-execute.output.proceed" || true
+      [ "$gate-post-validate.output.proceed" != "" ] && POST_GATE_DECISION="$gate-post-validate.output.proceed" || true
+      [ "$validate.output.dry_run_count" != "" ] && DRY_RUN_COUNT="$validate.output.dry_run_count" || true
+      [ "$validate.output.actual_count" != "" ] && ACTUAL_COUNT="$validate.output.actual_count" || true
+      [ "$validate.output.dry_run_actual_delta_pct" != "" ] && DELTA_PCT="$validate.output.dry_run_actual_delta_pct" || true
+      [ "$validate.output.restricted_object_touched" != "" ] && RESTRICTED_TOUCHED="$validate.output.restricted_object_touched" || true
+
+      if [ "$VALIDATE_RESULT" = "pass" ] && [ "$PRE_GATE_DECISION" != "false" ] && [ "$POST_GATE_DECISION" != "false" ]; then
+        RESULT="success"
+      elif [ "$PRE_GATE_DECISION" = "false" ] || [ "$POST_GATE_DECISION" = "false" ]; then
+        RESULT="gate-aborted"
+      else
+        RESULT="failure"
+      fi
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  %s  sf-data-correction  sub_type=%s  scope=%s  affected_count=%s  result=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${SUB_TYPE}" "${SCOPE}" "${ACTUAL_COUNT}" "${RESULT}" \
+        >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. Heuristic estimate.
+      # sf-data-correction typical shape: ~2 haiku, ~9 sonnet, ~1 opus[1m], ~3 bash.
+      # The opus[1m] node is execute (writes BOTH Apex artifacts). validate is
+      # bash-heavy (sf apex run + log parsing). Plan and document are sonnet.
+      # Cost profile similar to sf-metadata-change but with extra bash for the
+      # dry-run vs live two-phase validate.
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_INPUT_TOKENS=260000
+      EST_OUTPUT_TOKENS=30000
+      EST_COST_USD=$(python3 -c "
+input_tok = $EST_INPUT_TOKENS / 1_000_000
+output_tok = $EST_OUTPUT_TOKENS / 1_000_000
+# Weighted blend: 1 opus[1m] node dominates (~50% cost), rest is sonnet + haiku.
+#   opus_1m portion: 0.5 * (input_tok * 20 + output_tok * 100)
+#   sonnet portion:  0.4 * (input_tok * 3  + output_tok * 15)
+#   haiku portion:   0.1 * (input_tok * 1  + output_tok * 5)
+cost = (0.5 * (input_tok * 20 + output_tok * 100)) + \
+       (0.4 * (input_tok * 3 + output_tok * 15)) + \
+       (0.1 * (input_tok * 1 + output_tok * 5))
+print(f'{cost:.2f}')
+")
+
+      # Derive orchestrated flag from $ARGUMENTS — matches the disk-write
+      # detector below and the sf-integration-change pattern. Earlier
+      # ${orchestrated:-false} reads a never-set env var and always emitted
+      # "false", silently misclassifying orchestrated runs in the cost log.
+      ORCHESTRATED_STR="false"
+      printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true' && ORCHESTRATED_STR="true"
+
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-data-correction\",\"ticket\":\"%s\",\"engagement\":\"%s\",\"harness_version\":\"%s\",\"orchestrated\":\"%s\",\"nodes\":{\"haiku\":2,\"sonnet\":9,\"opus_1m\":1,\"bash\":3},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"%s\",\"sub_type\":\"%s\",\"scope\":\"%s\",\"data_correction\":{\"estimated_count\":%s,\"dry_run_count\":%s,\"actual_count\":%s,\"dry_run_actual_delta_pct\":%s,\"restricted_object_touched\":\"%s\"}}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" "${ORCHESTRATED_STR}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" "${RESULT}" "${SUB_TYPE}" "${SCOPE}" \
+        "${ESTIMATED_COUNT:-0}" "${DRY_RUN_COUNT}" "${ACTUAL_COUNT}" "${DELTA_PCT}" "${RESTRICTED_TOUCHED}" \
+        >> "$COST_LOG"
+
+      # Orchestrated-mode contract per ADR-0017: when running under
+      # sf-orchestrator, emit family_result.json to the orchestrator's
+      # collection directory ON DISK. The orchestrator's
+      # invoke-families-in-sequence reads the file (not stdout).
+      if [ "$PRE_GATE_DECISION" = "false" ] || [ "$POST_GATE_DECISION" = "false" ]; then
+        FAMILY_STATUS="gate-aborted"
+      elif [ "$RESULT" = "success" ]; then
+        FAMILY_STATUS="success"
+      else
+        FAMILY_STATUS="failure"
+      fi
+
+      # files_changed_actual is typically 0 for this family — Apex artifacts live
+      # in $ARTIFACTS_DIR (run-scoped), not in the engagement source tree. The
+      # optional engagement-ADR (for recurring patterns) DOES touch the repo;
+      # the document phase reports docs_updated_count when it writes one.
+      FILES_CHANGED_COUNT="${execute_output_files_changed_count:-0}"
+      DOCS_UPDATED_COUNT="${document_output_docs_updated_count:-0}"
+
+      if printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true'; then
+        if [ -z "${ORCHESTRATOR_RUN_ID:-}" ]; then
+          echo "  ⚠ --orchestrated true but ORCHESTRATOR_RUN_ID is unset; can't emit family_result.json" >&2
+        else
+          ORCHESTRATOR_DIR="_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}"
+          mkdir -p "$ORCHESTRATOR_DIR"
+          FAMILY_RESULT_FILE="$ORCHESTRATOR_DIR/sf-data-correction.json"
+
+          python3 <<PYEOF
+      import json
+      result = {
+          "family": "sf-data-correction",
+          "status": "$FAMILY_STATUS",
+          "ticket": "$TICKET",
+          "sub_type": "$SUB_TYPE",
+          "scope": "$SCOPE",
+          "files_changed_count": $FILES_CHANGED_COUNT,
+          "validation_results": {
+              "dry_run_count": $DRY_RUN_COUNT,
+              "actual_count": $ACTUAL_COUNT,
+              "dry_run_actual_delta_pct": $DELTA_PCT,
+              "restricted_object_touched": "$RESTRICTED_TOUCHED",
+              "overall": "$VALIDATE_RESULT",
+          },
+          "doc_updates_count": $DOCS_UPDATED_COUNT,
+          "errors": [],
+      }
+      with open("$FAMILY_RESULT_FILE", "w") as out:
+          json.dump(result, out, indent=2)
+      PYEOF
+          echo "  → family_result.json written for orchestrator: $FAMILY_RESULT_FILE"
+        fi
+      fi
+    depends_on: [update-jira-success, update-jira-failure, validate, gate-pre-execute, gate-post-validate]
+    trigger_rule: all_done

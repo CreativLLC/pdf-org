@@ -1,0 +1,675 @@
+name: sf-lwc-change
+description: |
+  Phase 7 task-family workflow per ADR-0003 / ADR-0021. Handles Lightning
+  Web Components and their backing Apex controllers — create / modify /
+  delete LWC; create / modify / delete the paired @AuraEnabled controller;
+  Jest test changes; meta-XML changes. Sub-types, gates, and validation
+  strategy locked in ADR-0021.
+
+  Invoked by:
+    • sf-dispatcher (single-family) when classifier picks `sf-lwc-change`
+    • sf-orchestrator (multi-family) for cross-family tickets, with
+      `--orchestrated true`. Per ADR-0017, when orchestrated, the
+      `update-jira-*` nodes are suppressed and `log-workflow-run` emits
+      a `family_result` JSON the orchestrator collects.
+
+  Inputs:
+    $ARGUMENTS  — passed by the dispatcher (or orchestrator):
+                  `<TICKET> [--orchestrated true] "<description>"`
+                  Orchestrated mode is detected by grep-ing $ARGUMENTS for
+                  `--orchestrated true` (no declared `inputs.orchestrated`
+                  — see ADR-0017's "Family workflow contract" for why).
+
+  Structural backbone per ADR-0003 (same shape as sf-apex-change):
+    1.  extract-jira-key             (deterministic)
+    2.  pull-jira-context            (command: pull-jira-context)
+    3.  classify-sub-type            (LLM, scoped to this task family)
+    4.  smoke-validate-claims        (verify ticket's concrete claims)
+    5.  verify-org-context           (command: verify-org-context)
+    6.  load-engagement-context      (command: load-engagement-context)
+    7.  plan                         (command: sf-lwc-change-plan)
+    8.  gate-pre-execute             (conditional per ADR-0021 §2)
+    9.  execute                      (command: sf-lwc-change-execute)
+    10. validate                     (command: sf-lwc-change-validate)
+    11. gate-post-validate           (conditional per ADR-0021 §6)
+    12. document                     (command: sf-lwc-change-document)
+    13. update-jira-success/failure  (suppressed when orchestrated)
+    14. log-workflow-run             (emits run log + cost log + family_result)
+
+provider: claude
+model: sonnet
+
+# Orchestrated mode (per ADR-0017) is detected by grep'ing for
+# '--orchestrated true' in $ARGUMENTS — matching the sf-apex-change.yaml
+# pattern. update-jira-* nodes are suppressed and log-workflow-run writes
+# family_result.json to disk for the orchestrator to read.
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: FETCH & CLASSIFY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: extract-jira-key
+    prompt: |
+      Extract the Jira ticket key from $ARGUMENTS.
+
+      Input: $ARGUMENTS  (e.g., `--ticket ACME-101 --description "..."`)
+
+      The ticket key must match `^[A-Z][A-Z0-9]+-\d+$`. If absent or
+      malformed, fail with:
+        `error: missing or invalid --ticket. Expected like ACME-101.`
+
+      Output ONLY the bare ticket key (no quotes, markdown, or extra text).
+    allowed_tools: []
+    output_format:
+      type: object
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Z][A-Z0-9]+-\\d+$"
+        description:
+          type: string
+      required: [ticket, description]
+
+  - id: pull-jira-context
+    command: pull-jira-context
+    depends_on: [extract-jira-key]
+    context: fresh
+
+  - id: classify-sub-type
+    prompt: |
+      You are the sf-lwc-change sub-type classifier. The dispatcher (or
+      orchestrator) already chose this family; your job is to pick the
+      correct sub-type from ADR-0021 §1, plus the scope and side flags
+      that downstream gates use.
+
+      ## Context
+
+      ### Jira ticket
+      $pull-jira-context.output
+
+      ### Engineer's free-form description
+      $extract-jira-key.output.description
+
+      ## Sub-types (ADR-0021 §1)
+
+      | sub_type                       | trigger                                                                              |
+      |--------------------------------|--------------------------------------------------------------------------------------|
+      | create-lwc                     | New `lwc/<Name>/` directory                                                          |
+      | modify-lwc                     | Existing LWC's JS / HTML / CSS changed; no controller-signature or meta target change |
+      | delete-lwc                     | Existing `lwc/<Name>/` removed (DESTRUCTIVE)                                         |
+      | create-lwc-apex-controller     | New `@AuraEnabled` controller `.cls` paired with an LWC                              |
+      | modify-lwc-apex-controller     | Existing LWC controller's signature changed (removed / renamed @AuraEnabled method)  |
+      | add-method-to-lwc-controller   | LWC controller modified purely additively (new @AuraEnabled method)                  |
+      | delete-lwc-apex-controller     | LWC controller `.cls` removed (DESTRUCTIVE)                                          |
+      | create-lwc-jest-test           | New `__tests__/<Name>.test.js`                                                       |
+      | modify-lwc-jest-test           | Existing Jest test changed                                                           |
+      | modify-lwc-meta                | Only `<Name>.js-meta.xml` changed (API version, supported targets, design props)     |
+
+      ## Precedence (when ticket implies multiple)
+
+      `delete-lwc-apex-controller` > `delete-lwc` >
+      `modify-lwc-apex-controller` (signature change) >
+      `modify-lwc-meta` (target/visibility change) >
+      `modify-lwc` > `create-lwc` > `create-lwc-apex-controller` >
+      `add-method-to-lwc-controller` > `modify-lwc-jest-test` >
+      `create-lwc-jest-test`.
+
+      Higher-precedence sub-types have stricter gates; over-gate is safer
+      than under-gate.
+
+      ## Scope
+
+      Estimate conservatively (round up when uncertain):
+      - small:  one LWC, no controller change, or controller change is additive
+      - medium: LWC + controller modified together, or 2-3 LWCs touched
+      - large:  LWC + controller + tests changed simultaneously; cross-component
+                refactor; or any change touching ≥ 4 files across `lwc/`
+
+      ## Side flags
+
+      - `breaks_controller_contract`: `"true"` if `sub_type == modify-lwc-apex-controller`
+        AND the ticket describes removing or renaming an @AuraEnabled method. The
+        planner re-checks this against the codebase; the classifier surfaces the
+        suspicion based on ticket language.
+      - `meta_orphaning_change`: `"true"` if `sub_type == modify-lwc-meta` AND the
+        ticket describes removing a `<target>` entry or flipping `<isExposed>`
+        from true to false. Same — planner re-verifies.
+      - `touches_soql_dml`: `"true"` if the controller change clearly involves
+        SOQL or DML. Recorded but NOT a gate (the FLS/CRUD check always runs
+        for LWC controllers per ADR-0021 §7).
+      - `touches_callouts`: `"true"` if the controller does HTTP callouts.
+      - `needs_external_research`: `"true"` if the fix depends on external
+        library / API specifics not apparent from docs or codebase.
+    depends_on: [pull-jira-context]
+    model: haiku
+    allowed_tools: []
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        sub_type:
+          type: string
+          enum:
+            - create-lwc
+            - modify-lwc
+            - delete-lwc
+            - create-lwc-apex-controller
+            - modify-lwc-apex-controller
+            - add-method-to-lwc-controller
+            - delete-lwc-apex-controller
+            - create-lwc-jest-test
+            - modify-lwc-jest-test
+            - modify-lwc-meta
+        scope:
+          type: string
+          enum: [small, medium, large]
+        breaks_controller_contract:
+          type: string
+          enum: ["true", "false"]
+        meta_orphaning_change:
+          type: string
+          enum: ["true", "false"]
+        touches_soql_dml:
+          type: string
+          enum: ["true", "false"]
+        touches_callouts:
+          type: string
+          enum: ["true", "false"]
+        needs_external_research:
+          type: string
+          enum: ["true", "false"]
+        reasoning:
+          type: string
+      required:
+        - sub_type
+        - scope
+        - breaks_controller_contract
+        - meta_orphaning_change
+        - touches_soql_dml
+        - touches_callouts
+        - needs_external_research
+        - reasoning
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1.5: SMOKE-VALIDATE
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: smoke-validate-claims
+    prompt: |
+      You are the smoke validator. Check that the ticket's claims about
+      the code are accurate so downstream gates rest on a reliable
+      foundation.
+
+      ## Context
+
+      ### Ticket
+      $pull-jira-context.output
+
+      ### Classifier output
+      $classify-sub-type.output
+
+      ## Task
+
+      Extract concrete, verifiable claims from the ticket body and recent
+      comments. For LWC tickets, common claims to verify:
+      - LWC component names referenced (e.g. `renewalSummary`).
+      - Apex controller names (e.g. `RenewalSummaryController`).
+      - @AuraEnabled method names referenced.
+      - File paths in `lwc/<Name>/` or `force-app/main/default/classes/`.
+      - Field references (`Object__c.Field__c`).
+      - Page / Lightning App / Community references that depend on the LWC.
+      - Quoted code snippets.
+
+      Then verify each concrete claim against the engagement repo:
+      - Read cited file paths. Confirm the LWC directory exists.
+      - Grep for cited symbols across `force-app/main/default/lwc/` and
+        `force-app/main/default/classes/`.
+      - For field references, check `objects/<Obj>/fields/<Field>.field-meta.xml`.
+      - For LWC ↔ controller imports, check the JS for
+        `import <name> from '@salesforce/apex/<Controller>.<method>'` lines.
+
+      ## Budget
+
+      ~30 seconds. Check the 2–3 most load-bearing claims. Prefer
+      false-negative safety (flag inaccurate when uncertain) over
+      false-positive.
+
+      If the ticket has NO concrete claims (purely descriptive), default
+      `claims_accurate` to `"false"`. The workflow falls back to full
+      pipeline behavior, which is correct for vague tickets.
+
+      ## Output
+
+      Set `claims_accurate`:
+      - `"true"`  — claims you checked match current code.
+      - `"false"` — at least one claim doesn't match; downstream gates
+                    should not trust the classifier's `scope` for skip
+                    decisions.
+
+      Include `mismatches` as a list of strings, one per discrepancy.
+    depends_on: [classify-sub-type]
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        claims_accurate:
+          type: string
+          enum: ["true", "false"]
+        mismatches:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+      required: [claims_accurate, mismatches, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: SF-SPECIFIC CONTEXT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-org-context
+    command: verify-org-context
+    depends_on: [smoke-validate-claims]
+    context: fresh
+
+  - id: load-engagement-context
+    command: load-engagement-context
+    depends_on: [verify-org-context]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: PLAN
+  # The plan phase is the heaviest reasoning step for sf-lwc-change
+  # because it spans heterogeneous file types (JS + HTML + CSS + XML +
+  # Apex + Jest) and identifies contract-breakage / meta-orphaning risks
+  # the classifier could only suspect from ticket language.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    command: sf-lwc-change-plan
+    depends_on: [load-engagement-context, classify-sub-type, smoke-validate-claims]
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: GATE-PRE-EXECUTE (conditional per ADR-0021 §2)
+  # Fires when ANY:
+  #   - sub_type ∈ {delete-lwc, delete-lwc-apex-controller}
+  #   - sub_type == modify-lwc-apex-controller AND plan flagged
+  #     breaks_controller_contract == true
+  #   - sub_type == modify-lwc-meta AND plan flagged
+  #     meta_orphaning_change == true
+  #   - scope == 'large'
+  #   - smoke-validate flagged inaccurate claims
+  #
+  # Confirmation form:
+  #   - Destructive sub-types OR contract-breakage OR meta-orphaning
+  #     → literal `CONFIRM`
+  #   - Other triggers (scope=large, inaccurate claims) → `y`/`yes`
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-pre-execute
+    prompt: |
+      You are the in-workflow confirm gate (pre-execute). Per ADR-0021 §2,
+      this gate fires when the change is destructive, breaks the LWC ↔
+      controller contract, orphans the LWC from page layouts, is large,
+      or is based on inaccurate ticket claims.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Ticket:      $extract-jira-key.output.ticket
+      Sub-type:    $classify-sub-type.output.sub_type
+      Scope:       $classify-sub-type.output.scope
+      Claims:      $smoke-validate-claims.output.claims_accurate
+                   (mismatches: see smoke-validate output)
+
+      Plan:        $plan.output  (summary — full plan in $ARTIFACTS_DIR/plan.md)
+
+      Why this gate fired:
+        <list trigger(s):
+           delete-lwc / delete-lwc-apex-controller
+           / modify-lwc-apex-controller (contract breakage)
+           / modify-lwc-meta (orphaning change)
+           / scope=large / claims_accurate=false>
+
+      ⚠ For destructive / contract-breakage / meta-orphaning changes,
+      the plan output includes the caller-impact / layout-impact list.
+      Read it before confirming.
+
+      Acceptance:
+        - For sub_type ∈ {delete-lwc, delete-lwc-apex-controller}
+          OR plan.output.breaks_controller_contract == 'true'
+          OR plan.output.meta_orphaning_change == 'true':
+            require literal `CONFIRM` (uppercase, exact) — NOT `y`/`yes`.
+        - For scope=large or inaccurate claims:
+            accept `y` / `yes` (case-insensitive).
+        - Always accept `n` / `no` / empty to abort.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Show the engineer the plan summary and the trigger reason(s).
+      Wait for response. Emit structured output.
+
+      If the engineer aborts, the workflow stops cleanly. No files are
+      changed; no Jira transition occurs; the run log records the abort.
+    depends_on: [plan, classify-sub-type, smoke-validate-claims]
+    when: >-
+      $classify-sub-type.output.sub_type == 'delete-lwc' ||
+      $classify-sub-type.output.sub_type == 'delete-lwc-apex-controller' ||
+      $plan.output.breaks_controller_contract == 'true' ||
+      $plan.output.meta_orphaning_change == 'true' ||
+      $classify-sub-type.output.scope == 'large' ||
+      $smoke-validate-claims.output.claims_accurate == 'false'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: EXECUTE
+  # Heaviest agent work. Spans heterogeneous file types (JS, HTML, CSS,
+  # XML, Apex, Jest). Uses opus[1m] for the cross-file reasoning.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: execute
+    command: sf-lwc-change-execute
+    depends_on: [plan, gate-pre-execute]
+    trigger_rule: none_failed_min_one_success
+    when: "$gate-pre-execute.output.proceed != 'false'"
+    context: fresh
+    model: opus[1m]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: VALIDATE
+  # Composite — the command internally orchestrates:
+  #   • scripts/deploy-to-scratch.sh         (LWC files + Apex controller)
+  #   • scripts/run-apex-tests.sh            (controller's Apex tests)
+  #   • Jest tests                           (conditional on package.json)
+  #   • inline a11y heuristic                (HTML grep)
+  #   • scripts/check-fls-crud.sh            (controller; ALWAYS runs)
+  #   • scripts/check-lwc-controller-contract.sh  (LWC↔controller imports)
+  # Coverage gate is enforced inside run-apex-tests.sh against
+  # engagement.yaml.coverage.per_class_target.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    command: sf-lwc-change-validate
+    depends_on: [execute]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6.5: GATE-POST-VALIDATE (conditional per ADR-0021 §6)
+  # Fires when validate flagged issues that the pre-execute gate
+  # couldn't have seen (Jest failures, FLS/CRUD issues, post-execute
+  # contract drift). Apex test failures fail the workflow outright
+  # (no override) — they route directly to update-jira-failure.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gate-post-validate
+    prompt: |
+      You are the in-workflow confirm gate (post-validate). The static
+      checks or test runs flagged issues that need engineer judgment
+      before the workflow continues to document / update-jira.
+
+      ## Display
+
+      ```
+      ───────────────────────────────────────────────
+      Validation results:
+        Deploy to scratch:       $validate.output.deploy_result
+        Apex tests:              $validate.output.apex_tests_result
+                                 (coverage threshold: $validate.output.coverage_threshold%)
+        Jest tests:              $validate.output.jest_tests_result
+        Controller contract:     $validate.output.controller_contract_result
+        FLS/CRUD check:          $validate.output.fls_crud_result
+        Accessibility findings:  $validate.output.a11y_finding_count (informational)
+
+      Issues found:
+        <list per the validate output's failure_reason>
+
+      Acceptance:
+        - Apex test FAILURE: no override path — workflow fails. (Routes
+          directly to update-jira-failure; this gate does not display.)
+        - Jest test failure: `y`/`yes` to acknowledge and proceed.
+        - FLS/CRUD issues: `y`/`yes` to acknowledge (system context,
+          non-user object, etc. — explain in reasoning).
+        - Controller contract drift: literal `CONFIRM` (post-execute drift
+          implies the engineer's change broke the LWC↔controller contract
+          AFTER plan/execute predicted it wouldn't — this is a real risk).
+        - Always accept `n`/`no`/empty to abort.
+
+      If you abort, the change remains in the working tree but no docs
+      are written, no Jira comment is posted, the run log records the
+      abort. Fix and re-run, or revert the working tree.
+      ───────────────────────────────────────────────
+      ```
+
+      ## Task
+
+      Surface the static-check details and test results to the engineer,
+      get their response, emit structured output.
+    depends_on: [validate]
+    when: >-
+      ($validate.output.jest_tests_result == 'fail' &&
+       $validate.output.jest_tests_result != 'skipped') ||
+      $validate.output.fls_crud_result == 'fail' ||
+      $validate.output.controller_contract_result == 'fail'
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        confirmation_form:
+          type: string
+          enum: ["CONFIRM", "y", "n"]
+        reasoning:
+          type: string
+      required: [proceed, confirmation_form, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: DOCUMENT
+  # Fires only when validate's overall_result is pass AND the
+  # post-validate gate (if it fired) returned proceed=true.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: document
+    command: sf-lwc-change-document
+    depends_on: [validate, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      $validate.output.overall_result == 'pass' &&
+      $gate-post-validate.output.proceed != 'false'
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: UPDATE JIRA (suppressed when orchestrated per ADR-0017)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: update-jira-success
+    command: update-jira-on-completion
+    depends_on: [document, validate]
+    when: >-
+      ! $ARGUMENTS contains '--orchestrated true' &&
+      $validate.output.overall_result == 'pass'
+    context: fresh
+
+  - id: update-jira-failure
+    command: update-jira-on-failure
+    depends_on: [validate, gate-pre-execute, gate-post-validate]
+    trigger_rule: none_failed_min_one_success
+    when: >-
+      ! $ARGUMENTS contains '--orchestrated true' && (
+        $validate.output.overall_result == 'fail' ||
+        $gate-pre-execute.output.proceed == 'false' ||
+        $gate-post-validate.output.proceed == 'false'
+      )
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 9: LOG + COST + FAMILY_RESULT
+  # Three outputs per ADR-0016 / ADR-0017:
+  #   1. _internal/harness-runs.log (one-line audit trail)
+  #   2. _internal/cost-log.jsonl   (per-run cost estimate)
+  #   3. family_result JSON to disk (when orchestrated; per ADR-0017)
+  #      at _internal/orchestrator-runs/$ORCHESTRATOR_RUN_ID/sf-lwc-change.json
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: log-workflow-run
+    # Same Archon nested-field substitution pattern as sf-apex-change.
+    # Shell defaults guard against unset variables when nodes were skipped
+    # (Archon templates leave skipped-node references as empty strings).
+    bash: |
+      set -euo pipefail
+
+      TICKET=$(printf '%s' "$ARGUMENTS" | grep -oE '^[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      SUB_TYPE="$classify-sub-type.output.sub_type"
+      SCOPE="$classify-sub-type.output.scope"
+
+      VALIDATE_RESULT="${validate_output_overall_result:-skipped}"
+      PRE_GATE_DECISION="${gate_pre_execute_output_proceed:-skipped}"
+      POST_GATE_DECISION="${gate_post_validate_output_proceed:-skipped}"
+
+      [ "$validate.output.overall_result" != "" ] && VALIDATE_RESULT="$validate.output.overall_result" || true
+      [ "$gate-pre-execute.output.proceed" != "" ] && PRE_GATE_DECISION="$gate-pre-execute.output.proceed" || true
+      [ "$gate-post-validate.output.proceed" != "" ] && POST_GATE_DECISION="$gate-post-validate.output.proceed" || true
+
+      if [ "$VALIDATE_RESULT" = "pass" ] && [ "$PRE_GATE_DECISION" != "false" ] && [ "$POST_GATE_DECISION" != "false" ]; then
+        RESULT="success"
+      elif [ "$PRE_GATE_DECISION" = "false" ] || [ "$POST_GATE_DECISION" = "false" ]; then
+        RESULT="gate-aborted"
+      else
+        RESULT="failure"
+      fi
+
+      # Derive orchestrated flag from $ARGUMENTS — matches the disk-write
+      # detector below and the sf-integration-change pattern. Earlier
+      # ${orchestrated:-false} reads a never-set env var and always emitted
+      # "false", silently misclassifying orchestrated runs in the cost log.
+      ORCHESTRATED_STR="false"
+      printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true' && ORCHESTRATED_STR="true"
+
+      RUN_LOG="_internal/harness-runs.log"
+      mkdir -p "$(dirname "$RUN_LOG")"
+      printf '%s  %s  sf-lwc-change  sub_type=%s  scope=%s  orchestrated=%s  result=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${SUB_TYPE}" "${SCOPE}" "${ORCHESTRATED_STR}" "${RESULT}" \
+        >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. LWC family is ~30% more expensive than
+      # sf-apex-change typical (more files, heterogeneous types, opus[1m]
+      # on both plan AND execute). Estimated node shape:
+      #   ~2 haiku, ~10 sonnet, ~3 opus[1m], ~5 bash.
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_INPUT_TOKENS=520000
+      EST_OUTPUT_TOKENS=58000
+      EST_COST_USD=$(python3 -c "
+input_tok = $EST_INPUT_TOKENS / 1_000_000
+output_tok = $EST_OUTPUT_TOKENS / 1_000_000
+# Node distribution: 2 haiku, 10 sonnet, 3 opus_1m, 5 bash.
+# 3 opus[1m] nodes (plan + execute + document) dominate (~75% of cost).
+cost = (input_tok * 0.75 * 20) + (output_tok * 0.75 * 100) + (input_tok * 0.25 * 3) + (output_tok * 0.25 * 15)
+print(f'{cost:.2f}')
+")
+
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-lwc-change\",\"ticket\":\"%s\",\"engagement\":\"%s\",\"harness_version\":\"%s\",\"orchestrated\":\"%s\",\"nodes\":{\"haiku\":2,\"sonnet\":10,\"opus_1m\":3,\"bash\":5},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"%s\",\"sub_type\":\"%s\",\"scope\":\"%s\"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" "${ORCHESTRATED_STR}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" "${RESULT}" "${SUB_TYPE}" "${SCOPE}" \
+        >> "$COST_LOG"
+
+      # Family-result JSON for sf-orchestrator (ADR-0017). Written to disk
+      # at $ORCHESTRATOR_DIR/sf-lwc-change.json when orchestrated; the
+      # orchestrator's invoke-families-in-sequence bash node reads the file
+      # (NOT stdout). Standalone runs skip the write entirely.
+      #
+      # Each field is captured into a shell variable first (with a
+      # default for skipped-node references), then serialized. Mixing
+      # Archon $foo.output.bar substitution with shell ${var:-default}
+      # parameter expansion in one token is unsafe — the substitution
+      # happens before the shell parses, so the result of substitution
+      # has to be a plain word, not a parameter-expansion expression.
+      FILES_CHANGED_JSON="${execute_output_files_changed_actual:-[]}"
+      DOC_UPDATES_JSON="${document_output_docs_updated:-[]}"
+      DEPLOY_RESULT="${validate_output_deploy_result:-skipped}"
+      APEX_TESTS_RESULT="${validate_output_apex_tests_result:-skipped}"
+      JEST_TESTS_RESULT="${validate_output_jest_tests_result:-skipped}"
+      A11Y_FINDING_COUNT="${validate_output_a11y_finding_count:-0}"
+      FLS_CRUD_RESULT="${validate_output_fls_crud_result:-skipped}"
+      CONTRACT_RESULT="${validate_output_controller_contract_result:-skipped}"
+
+      # Prefer Archon nested-field substitution where supported.
+      [ "$execute.output.files_changed_actual" != "" ] && FILES_CHANGED_JSON="$execute.output.files_changed_actual" || true
+      [ "$document.output.docs_updated" != "" ] && DOC_UPDATES_JSON="$document.output.docs_updated" || true
+      [ "$validate.output.deploy_result" != "" ] && DEPLOY_RESULT="$validate.output.deploy_result" || true
+      [ "$validate.output.apex_tests_result" != "" ] && APEX_TESTS_RESULT="$validate.output.apex_tests_result" || true
+      [ "$validate.output.jest_tests_result" != "" ] && JEST_TESTS_RESULT="$validate.output.jest_tests_result" || true
+      [ "$validate.output.a11y_finding_count" != "" ] && A11Y_FINDING_COUNT="$validate.output.a11y_finding_count" || true
+      [ "$validate.output.fls_crud_result" != "" ] && FLS_CRUD_RESULT="$validate.output.fls_crud_result" || true
+      [ "$validate.output.controller_contract_result" != "" ] && CONTRACT_RESULT="$validate.output.controller_contract_result" || true
+
+      # Orchestrated-mode contract per ADR-0017: when running under
+      # sf-orchestrator, emit family_result.json to the orchestrator's
+      # collection directory ON DISK. The orchestrator's
+      # invoke-families-in-sequence reads the file (not stdout).
+      if printf '%s' "$ARGUMENTS" | grep -qE '\-\-orchestrated[[:space:]]+true'; then
+        if [ -z "${ORCHESTRATOR_RUN_ID:-}" ]; then
+          echo "  ⚠ --orchestrated true but ORCHESTRATOR_RUN_ID is unset; can't emit family_result.json" >&2
+        else
+          ORCHESTRATOR_DIR="_internal/orchestrator-runs/${ORCHESTRATOR_RUN_ID}"
+          mkdir -p "$ORCHESTRATOR_DIR"
+          FAMILY_RESULT_FILE="$ORCHESTRATOR_DIR/sf-lwc-change.json"
+
+          if [ "$PRE_GATE_DECISION" = "false" ] || [ "$POST_GATE_DECISION" = "false" ]; then
+            FAMILY_STATUS="gate-aborted"
+          elif [ "$RESULT" = "success" ]; then
+            FAMILY_STATUS="success"
+          else
+            FAMILY_STATUS="failure"
+          fi
+
+          python3 <<PYEOF
+      import json
+      result = {
+          "family": "sf-lwc-change",
+          "status": "$FAMILY_STATUS",
+          "ticket": "$TICKET",
+          "sub_type": "$SUB_TYPE",
+          "scope": "$SCOPE",
+          "files_changed_actual": $FILES_CHANGED_JSON,
+          "validation_results": {
+              "deploy": "$DEPLOY_RESULT",
+              "apex_tests": "$APEX_TESTS_RESULT",
+              "jest_tests": "$JEST_TESTS_RESULT",
+              "a11y_finding_count": $A11Y_FINDING_COUNT,
+              "fls_crud": "$FLS_CRUD_RESULT",
+              "controller_contract": "$CONTRACT_RESULT",
+              "overall": "$VALIDATE_RESULT",
+          },
+          "doc_updates": $DOC_UPDATES_JSON,
+          "est_cost_usd": $EST_COST_USD,
+          "errors": [],
+      }
+      with open("$FAMILY_RESULT_FILE", "w") as out:
+          json.dump(result, out, indent=2)
+      PYEOF
+          echo "  → family_result.json written for orchestrator: $FAMILY_RESULT_FILE"
+        fi
+      fi
+    depends_on: [update-jira-success, update-jira-failure]
+    trigger_rule: none_failed_min_one_success

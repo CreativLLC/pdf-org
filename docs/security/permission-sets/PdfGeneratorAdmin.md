@@ -1,12 +1,14 @@
 ---
 title: "PdfGeneratorAdmin"
 audience: public
-last_updated: 2026-05-15
-last_updated_by: archon-discover
-related_tickets: []
+last_updated: 2026-05-16
+last_updated_by: drew.smith@openwacca.com
+related_tickets:
+  - GRIM-51
 related_docs:
   - README.md
   - ../sharing-model.md
+  - ../../objects/Document_Template__c.md
 ---
 
 # `PdfGeneratorAdmin`
@@ -46,6 +48,7 @@ Authoring + administration of the PDF template-builder feature. Grants CRUD on `
 | `Document_Template__c` | `Description__c` | ✓ | ✓ |
 | `Document_Template__c` | `File_Naming_Pattern__c` | ✓ | ✓ |
 | `Document_Template__c` | `Overwrite_Existing_File__c` | ✓ | ✓ |
+| `Document_Template__c` | `Reviewer__c` | ✓ | ✓ |
 | `Form__c` | `Comments__c` | ✓ | ✓ |
 | `Form__c` | `Patient_Name__c` | ✓ | ✓ |
 | `Form__c` | `Procedure_Date__c` | ✓ | ✓ |

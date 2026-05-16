@@ -1,0 +1,10 @@
+{
+  "orchestrator_run_id": "orch-2026-05-16T15-23-56Z-GRIM-51",
+  "ticket": "GRIM-51",
+  "overall_result": "success",
+  "completed_families": ["sf-metadata-change", "sf-permission-change"],
+  "failed_family": null,
+  "failed_reason": null,
+  "families_count": 2,
+  "ordered_families": ["sf-metadata-change", "sf-permission-change"]
+}

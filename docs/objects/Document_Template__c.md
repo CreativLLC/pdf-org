@@ -1,13 +1,15 @@
 ---
 title: "Document_Template__c"
 audience: public
-last_updated: 2026-05-15
+last_updated: 2026-05-16
 last_updated_by: drew.smith@openwacca.com
-related_tickets: []
+related_tickets:
+  - GRIM-51
 related_docs:
   - Template_Version__c.md
   - Template_Mapping__c.md
   - ContentVersion.md
+  - ../security/permission-sets/PdfGeneratorAdmin.md
 ---
 
 # `Document_Template__c`
@@ -36,12 +38,14 @@ Root template for a class of generated PDF documents (e.g., Pre-Op Form, Trainin
 | `File_Naming_Pattern__c` | File Naming Pattern | Text(255) | No | Tokenized file name. Tokens like `{{Name}}`, `{{CreatedDate}}`, `{{Field_Api_Name__c}}` are resolved at generate time. Defaults to `<Template Name> - <Record Name>` if blank. |
 | `Overwrite_Existing_File__c` | Overwrite Existing File | Checkbox (default false) | No | If true, regenerating supersedes the prior PDF (matched via `ContentVersion.Source_Template_Version__c`). If false, each generation creates a new file. |
 | `Description__c` | Description | Long Text Area(3000) | No | Free-form admin notes. |
+| `Reviewer__c` | Reviewer | Lookup → `User` | No | User who reviewed this template before promotion to production. Populated by PDF authors during the review handoff workflow. Field read+edit granted on [`PdfGeneratorAdmin`](../security/permission-sets/PdfGeneratorAdmin.md) — the only permission set with object access to `Document_Template__c`. |
 
 ## Relationships
 
 | Relationship | Field | Related object | Type | Cascade behavior |
 |---|---|---|---|---|
 | Lookup | `Default_Version__c` | `Template_Version__c` | Lookup | SetNull |
+| Lookup | `Reviewer__c` | `User` | Lookup | SetNull |
 | Child (reverse) | `Versions` (`Template_Version__c.Document_Template__c`) | `Template_Version__c` | Master-Detail | Cascade delete |
 | Child (reverse) | `Mappings` (`Template_Mapping__c.Document_Template__c`) | `Template_Mapping__c` | Master-Detail | Cascade delete |
 

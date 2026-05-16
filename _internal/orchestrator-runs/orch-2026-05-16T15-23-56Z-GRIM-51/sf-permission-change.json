@@ -1,0 +1,38 @@
+{
+  "family": "sf-permission-change",
+  "status": "success",
+  "ticket": "GRIM-51",
+  "sub_type": "modify-permission-set",
+  "sub_type_as_classified": "modify-profile",
+  "scope": "small",
+  "files_changed_actual": [
+    {"path": "force-app/main/default/permissionsets/PdfGeneratorAdmin.permissionset-meta.xml", "operation": "modify", "diff": "+1 fieldPermissions for Document_Template__c.Reviewer__c (read+edit)"}
+  ],
+  "blast_radius": {
+    "files_changed": 1,
+    "added_count": 1,
+    "removed_count": 0,
+    "removes_access": false,
+    "narrows_access": false,
+    "affects_admin": false,
+    "affects_critical_object": false
+  },
+  "validation_results": {
+    "deploy": "pass",
+    "blast_radius": "pass",
+    "orphan_result": "pass",
+    "admin_lockout_result": "pass",
+    "recipient_result": "n/a",
+    "overall": "pass"
+  },
+  "confirmation_form_used": "y",
+  "doc_updates": [
+    "docs/security/permission-sets/PdfGeneratorAdmin.md",
+    "docs/objects/Document_Template__c.md (forward-reference refined)"
+  ],
+  "errors": [],
+  "notes": [
+    "AC #4 ('Read-only for everyone else') was satisfied vacuously: zero profiles + 6 non-PdfGeneratorAdmin PSes grant Document_Template__c object access in source, so FLS on Reviewer__c is unreachable for them. No profile or other PS files were touched.",
+    "Ticket's 'PDF Author PS' resolved to PdfGeneratorAdmin (the only PS granting Document_Template__c access). Confirmed at the pre-execute gate."
+  ]
+}

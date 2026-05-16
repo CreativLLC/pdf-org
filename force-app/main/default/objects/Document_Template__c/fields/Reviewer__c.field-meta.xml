@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Reviewer__c</fullName>
+    <description>User who reviewed this template before promotion to production. Populated by PDF authors during the review handoff workflow.</description>
+    <externalId>false</externalId>
+    <label>Reviewer</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Reviewed Templates</relationshipLabel>
+    <relationshipName>Reviewed_Templates</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

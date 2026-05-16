@@ -1,0 +1,93 @@
+ »   Warning: @salesforce/cli update available from 2.126.4 to 2.134.6.
+{
+  "status": 0,
+  "result": {
+    "checkOnly": false,
+    "completedDate": "2026-05-16T15:44:51.000Z",
+    "createdBy": "00530000005oGYh",
+    "createdByName": "Jordan Howard",
+    "createdDate": "2026-05-16T15:44:46.000Z",
+    "details": {
+      "componentSuccesses": [
+        {
+          "changed": true,
+          "componentType": "CustomField",
+          "created": true,
+          "createdDate": "2026-05-16T15:44:51.000Z",
+          "deleted": false,
+          "fileName": "objects/Document_Template__c.object",
+          "fullName": "Document_Template__c.Reviewer__c",
+          "id": "00NNq00000cx7ArMAI",
+          "success": true
+        },
+        {
+          "changed": true,
+          "componentType": "Layout",
+          "created": false,
+          "createdDate": "2026-05-16T15:44:51.000Z",
+          "deleted": false,
+          "fileName": "layouts/Document_Template__c-Document Template Layout.layout",
+          "fullName": "Document_Template__c-Document Template Layout",
+          "id": "00hNq00000HGSwDIAX",
+          "success": true
+        },
+        {
+          "changed": true,
+          "componentType": "",
+          "created": false,
+          "createdDate": "2026-05-16T15:44:51.000Z",
+          "deleted": false,
+          "fileName": "package.xml",
+          "fullName": "package.xml",
+          "success": true
+        }
+      ],
+      "runTestResult": {
+        "numFailures": 0,
+        "numTestsRun": 0,
+        "totalTime": 0,
+        "codeCoverage": [],
+        "codeCoverageWarnings": [],
+        "failures": [],
+        "flowCoverage": [],
+        "flowCoverageWarnings": [],
+        "successes": []
+      },
+      "componentFailures": []
+    },
+    "done": true,
+    "id": "0AfNq00000XKzU9KAL",
+    "ignoreWarnings": false,
+    "lastModifiedDate": "2026-05-16T15:44:51.000Z",
+    "numberComponentErrors": 0,
+    "numberComponentsDeployed": 2,
+    "numberComponentsTotal": 2,
+    "numberFiles": "5",
+    "numberTestErrors": 0,
+    "numberTestsCompleted": 0,
+    "numberTestsTotal": 0,
+    "rollbackOnError": true,
+    "runTestsEnabled": false,
+    "startDate": "2026-05-16T15:44:47.000Z",
+    "status": "Succeeded",
+    "success": true,
+    "zipSize": 2216,
+    "files": [
+      {
+        "fullName": "Document_Template__c.Reviewer__c",
+        "type": "CustomField",
+        "state": "Created",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\objects\\Document_Template__c\\fields\\Reviewer__c.field-meta.xml"
+      },
+      {
+        "fullName": "Document_Template__c-Document Template Layout",
+        "type": "Layout",
+        "state": "Changed",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\layouts\\Document_Template__c-Document Template Layout.layout-meta.xml"
+      }
+    ],
+    "zipFileCount": 3,
+    "deployUrl": "https://openwacca--pdf.sandbox.my.salesforce.com/lightning/setup/DeployStatus/page?address=%2Fchangemgmt%2FmonitorDeploymentsDetails.apexp%3FasyncId%3D0AfNq00000XKzU9KAL%26retURL%3D%252Fchangemgmt%252FmonitorDeployment.apexp"
+  },
+  "warnings": []
+}

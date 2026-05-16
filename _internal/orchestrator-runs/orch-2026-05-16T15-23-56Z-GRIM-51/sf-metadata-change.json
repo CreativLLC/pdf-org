@@ -1,0 +1,25 @@
+{
+  "family": "sf-metadata-change",
+  "status": "success",
+  "ticket": "GRIM-51",
+  "sub_type": "create-field",
+  "scope": "small",
+  "files_changed_actual": [
+    {"path": "force-app/main/default/objects/Document_Template__c/fields/Reviewer__c.field-meta.xml", "operation": "add"},
+    {"path": "force-app/main/default/layouts/Document_Template__c-Document Template Layout.layout-meta.xml", "operation": "add (retrieved + edited)"}
+  ],
+  "validation_results": {
+    "deploy": "pass",
+    "reference_impact": "pass",
+    "fls_coverage": "pending-handoff-to-sf-permission-change",
+    "overall": "pass"
+  },
+  "doc_updates": [
+    "docs/objects/Document_Template__c.md"
+  ],
+  "errors": [],
+  "notes": [
+    "AC #2 (page layout placement) satisfied: retrieved the existing 'Document Template Layout', added Reviewer__c to the Information section column 2 (Edit behavior) right after OwnerId, deployed.",
+    "FLS posture decision deferred to the next family (sf-permission-change) per orchestrator sequence."
+  ]
+}

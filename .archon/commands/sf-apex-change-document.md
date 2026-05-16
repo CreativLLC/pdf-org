@@ -107,6 +107,8 @@ Concretely:
 
     The engineer addresses each match and re-runs. Do NOT proceed to step 12 (link validation) with any slip un-resolved. This check is the difference between ADR-0010 being a rule and being enforced.
 
+    **Also enforce the external-context privacy invariant (per ADR-0015):** if `$pull-jira-context.output.external_context` is non-empty, for each entry scan every doc body for substrings of 50+ tokens that appear in the entry's `content` field. If found, fail the node with a structured error: external context (Fathom transcripts, Drive docs, etc.) is working memory only — it must not be echoed into engagement docs verbatim. The agent paraphrases or cites the source URL; it does NOT paste content. Suggested rewrite: replace the verbatim quote with "per [source-doc-title](<url>)..." and a paraphrase of the relevant fact.
+
 12. **Link-resolution scan.** Run the link validator against the docs tree:
 
     ```bash

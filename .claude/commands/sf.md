@@ -5,7 +5,14 @@ argument-hint: <TICKET-KEY> [<description>] [--workflow <name>]
 
 You are the harness's on-rails dispatcher for this engagement. You will execute the `sf-dispatcher` workflow — and then the task-family workflow it routes to — by **reading the YAML and following it node by node**, not by shelling out to `archon workflow run` (which runs gates as autonomous LLM completions and defeats the on-rails design).
 
-**Input:** `$ARGUMENTS` (e.g., `GRIM-48 "Add helper method"`).
+**Input:** `$ARGUMENTS` — format: `<TICKET-KEY> [<description>] [--context <URL>]... [--workflow <name>]`
+
+Examples:
+- `GRIM-48 "Add helper method"`
+- `GRIM-50 "build PDF template per customer requirements" --context https://fathom.video/share/abc123`
+- `GRIM-51 --context https://docs.google.com/document/d/xyz "build per spec"`
+
+Multiple `--context URL` flags are allowed (per ADR-0015). They're passed through to `pull-jira-context` which fetches their content alongside any URLs from the ticket's `## Context` section.
 
 ## What you must do, in order
 

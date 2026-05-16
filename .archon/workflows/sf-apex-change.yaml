@@ -498,5 +498,30 @@ nodes:
       printf '%s  %s  sf-apex-change  sub_type=%s  scope=%s  result=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${SUB_TYPE}" "${SCOPE}" "${RESULT}" \
         >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. Heuristic estimate (nodes by model × rates).
+      # sf-apex-change typical shape: ~2 haiku, ~9 sonnet, ~2 opus[1m], ~4 bash.
+      # Heaviest cost driver is the opus[1m] execute + document nodes.
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_INPUT_TOKENS=380000
+      EST_OUTPUT_TOKENS=42000
+      EST_COST_USD=$(python3 -c "
+input_tok = $EST_INPUT_TOKENS / 1_000_000
+output_tok = $EST_OUTPUT_TOKENS / 1_000_000
+# Weighted blend across node distribution: 2 haiku, 9 sonnet, 2 opus_1m, 4 bash
+# Bash nodes contribute 0. Roughly:
+#   sonnet 9/13 of input: 0.69 × \$3 = \$2.07/Mtok input weighted
+#   opus_1m 2/13: 0.15 × \$20 = \$3.00 weighted; output similar
+# Simplified: assume the 2 opus_1m nodes dominate (~70% cost)
+cost = (input_tok * 0.7 * 20) + (output_tok * 0.7 * 100) + (input_tok * 0.3 * 3) + (output_tok * 0.3 * 15)
+print(f'{cost:.2f}')
+")
+
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-apex-change\",\"ticket\":\"%s\",\"engagement\":\"%s\",\"harness_version\":\"%s\",\"nodes\":{\"haiku\":2,\"sonnet\":9,\"opus_1m\":2,\"bash\":4},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"%s\",\"sub_type\":\"%s\",\"scope\":\"%s\"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" "${RESULT}" "${SUB_TYPE}" "${SCOPE}" \
+        >> "$COST_LOG"
     depends_on: [update-jira-success, update-jira-failure]
     trigger_rule: none_failed_min_one_success

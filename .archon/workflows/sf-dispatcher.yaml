@@ -63,6 +63,77 @@ nodes:
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
+  # PHASE 1.5: EXTERNAL-CONTEXT CONFIRM GATE (per ADR-0015)
+  # Fires only when pull-jira-context fetched external URLs (Fathom,
+  # Drive, Loom, etc. via the ## Context section, custom field, or
+  # --context flag). Shows the engineer what was fetched, estimated
+  # cost, and lets them drop noisy items before the workflow proceeds.
+  # Skipped when external_context is empty.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: confirm-external-context
+    prompt: |
+      You are the external-context confirmation gate per ADR-0015.
+
+      ## What to display
+
+      For each entry in `$pull-jira-context.output.external_context`,
+      show the engineer:
+
+        • URL
+        • host_category and title
+        • estimated_tokens
+        • content_excerpt (first 200 chars only — for sanity check)
+
+      For each entry in `$pull-jira-context.output.external_context_skipped`,
+      show the URL and reason (so the engineer knows what wasn't fetched).
+
+      Sum the estimated_tokens across all fetched items and show an
+      estimated dollar cost using opus[1m] input rates (~$15/Mtok).
+
+      Display format:
+
+      ```
+      ───────────────────────────────────────────────
+      External context fetched for $extract-jira-key.output.ticket:
+
+        <bulleted list per item above>
+
+      Total context added: <N>K tokens (estimated cost: $<calc>)
+
+      Proceed? [y/N]    (or "skip <url>" to drop one before continuing)
+      ───────────────────────────────────────────────
+      ```
+
+      ## Engineer response
+
+      - `y` / `yes` → `proceed: "true"`, `dropped_urls: []`
+      - `n` / `no` / empty → `proceed: "false"`, workflow aborts cleanly
+      - `skip <url>` (one or more) → `proceed: "true"`, `dropped_urls: [<urls>]`. Downstream nodes filter the external_context array to exclude dropped urls.
+
+      ## When to skip this gate
+
+      If `$pull-jira-context.output.external_context` is empty, emit
+      `proceed: "true"` and `dropped_urls: []` immediately without
+      prompting the engineer. Most tickets won't have external context;
+      we don't pester engineers with empty gates.
+    depends_on: [pull-jira-context]
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        proceed:
+          type: string
+          enum: ["true", "false"]
+        dropped_urls:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+      required: [proceed, dropped_urls, reasoning]
+
+  # ═══════════════════════════════════════════════════════════════
   # PHASE 2: CLASSIFY (skipped when --workflow override given)
   # ═══════════════════════════════════════════════════════════════
 
@@ -117,8 +188,8 @@ nodes:
          `sf-apex-change` as of Phase 4), the invoke step will refuse to
          run it. The classifier still picks honestly; the system surfaces
          the gap.
-    depends_on: [pull-jira-context]
-    when: "$extract-jira-key.output.override_workflow == ''"
+    depends_on: [pull-jira-context, confirm-external-context]
+    when: "$extract-jira-key.output.override_workflow == '' && $confirm-external-context.output.proceed == 'true'"
     model: haiku
     allowed_tools: []
     context: fresh
@@ -273,5 +344,26 @@ nodes:
       printf '%s  %s  sf-dispatcher  workflow=%s  decision=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${WORKFLOW}" "${DECISION}" \
         >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. sf-dispatcher is light: ~1 haiku (classify),
+      # ~3 sonnet (parse-args/pull-jira/confirm/external-context), ~2 bash.
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_INPUT_TOKENS=35000
+      EST_OUTPUT_TOKENS=4000
+      EST_COST_USD=$(python3 -c "
+input_tok = $EST_INPUT_TOKENS / 1_000_000
+output_tok = $EST_OUTPUT_TOKENS / 1_000_000
+# sf-dispatcher mostly sonnet ($3 in / $15 out); small haiku contribution
+cost = (input_tok * 0.85 * 3) + (output_tok * 0.85 * 15) + (input_tok * 0.15 * 1) + (output_tok * 0.15 * 5)
+print(f'{cost:.2f}')
+")
+
+      COST_LOG="_internal/cost-log.jsonl"
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-dispatcher\",\"ticket\":\"%s\",\"engagement\":\"%s\",\"harness_version\":\"%s\",\"nodes\":{\"haiku\":1,\"sonnet\":3,\"bash\":2},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"%s\",\"chosen_workflow\":\"%s\"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TICKET}" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" \
+        "$([ "${DECISION}" = "true" ] && echo "proceeded" || echo "aborted")" "${WORKFLOW}" \
+        >> "$COST_LOG"
     depends_on: [invoke-workflow, confirm]
     trigger_rule: none_failed_min_one_success

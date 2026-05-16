@@ -61,6 +61,13 @@ Do **not** call `jira_update_issue` here.
 
 2. **Post the comment.** `jira_add_comment(issue_key="<TICKET>", body="<the markdown above>")`. Capture the comment id for the output payload.
 
+   **Read-only invariant for related tickets.** `<TICKET>` is `$extract-jira-key.output.ticket` ONLY — the typed-in ticket. Even though `pull-jira-context` fetches full bodies of the parent epic, sub-tasks, and blocks-related tickets into `related_tickets_full_context`, those tickets are **context-only**. Do NOT:
+   - Post comments to any related ticket.
+   - Transition any related ticket.
+   - Modify any field on any related ticket.
+
+   The agent uses related-ticket content to UNDERSTAND the broader context (business intent, sibling work, blockers); its WRITES go exclusively to the typed-in ticket. If a related-ticket update is genuinely needed (e.g., a blocker now resolved), the engineer opens that ticket and runs a separate `/sf` against it.
+
 3. **Transition the ticket toward `in_review` — walk the transition graph if a direct hop isn't available.** Jira project workflows frequently require multi-hop traversals (e.g. `Ready for Dev → In Progress → In Review`). Resolve this by BFS, bounded:
 
    Let `TARGET = engagement.yaml: jira.statuses.in_review`, `MAX_HOPS = 2`, and `ALLOWED_HOPS = the four named values of engagement.yaml: jira.statuses` (i.e. only hop *through* a status that the engagement has declared meaningful — never traverse stray statuses like "Won't Do" or "Blocked").

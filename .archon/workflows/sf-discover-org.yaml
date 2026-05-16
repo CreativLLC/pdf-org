@@ -248,4 +248,27 @@ nodes:
       printf '%s  -  sf-discover-org  objects=%d  flows=%d  integrations=%d  features=%d  profiles=%d  psets=%d  result=success\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${N_OBJECTS}" "${N_FLOWS}" "${N_INTEGRATIONS}" "${N_FEATURES}" "${N_PROFILES}" "${N_PSETS}" \
         >> "$RUN_LOG"
+
+      # Cost record per ADR-0016. /sf-discover-org is the most expensive
+      # workflow — 6 parallel opus[1m] nodes + sonnet synthesis + index.
+      # Cost scales with artifact count. Per-doc estimates from ADR-0013
+      # cost analysis: ~$0.225/object, $0.15/flow, $0.20/integration,
+      # $0.15/profile, $0.10/PS, $0.40 security overview, $0.50 synth+index.
+      ENGAGEMENT_ALIAS=$(grep -E '^engagement_alias:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^engagement_alias:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      HARNESS_VERSION=$(grep -E '^harness_version:' engagement.yaml 2>/dev/null | head -1 | sed -E 's/^harness_version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/' || echo "unknown")
+      EST_COST_USD=$(python3 -c "
+cost = (0.225 * $N_OBJECTS) + (0.15 * $N_FLOWS) + (0.20 * $N_INTEGRATIONS) + (0.15 * $N_PROFILES) + (0.10 * $N_PSETS) + 0.40 + 0.50
+print(f'{cost:.2f}')
+")
+      # Token estimates derived from cost (opus[1m] roughly $20/Mtok input, $100/Mtok output)
+      EST_INPUT_TOKENS=$(python3 -c "print(int(($EST_COST_USD * 0.7) / 20 * 1_000_000))")
+      EST_OUTPUT_TOKENS=$(python3 -c "print(int(($EST_COST_USD * 0.3) / 100 * 1_000_000))")
+
+      COST_LOG="_internal/cost-log.jsonl"
+      # Approximate node counts: 6 opus_1m (3 docs + 3 security), 2 sonnet (synth, index), 1 bash
+      printf '{\"ts\":\"%s\",\"workflow\":\"sf-discover-org\",\"ticket\":null,\"engagement\":\"%s\",\"harness_version\":\"%s\",\"nodes\":{\"sonnet\":2,\"opus_1m\":6,\"bash\":1},\"est_input_tokens\":%d,\"est_output_tokens\":%d,\"est_cost_usd\":%s,\"result\":\"success\",\"artifacts\":{\"objects\":%d,\"flows\":%d,\"integrations\":%d,\"features\":%d,\"profiles\":%d,\"permission_sets\":%d}}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${ENGAGEMENT_ALIAS}" "${HARNESS_VERSION}" \
+        "$EST_INPUT_TOKENS" "$EST_OUTPUT_TOKENS" "$EST_COST_USD" \
+        "${N_OBJECTS}" "${N_FLOWS}" "${N_INTEGRATIONS}" "${N_FEATURES}" "${N_PROFILES}" "${N_PSETS}" \
+        >> "$COST_LOG"
     depends_on: [update-index]

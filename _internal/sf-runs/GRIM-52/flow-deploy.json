@@ -1,0 +1,76 @@
+ »   Warning: @salesforce/cli update available from 2.126.4 to 2.134.6.
+{
+  "status": 0,
+  "result": {
+    "checkOnly": false,
+    "completedDate": "2026-05-16T16:51:28.000Z",
+    "createdBy": "00530000005oGYh",
+    "createdByName": "Jordan Howard",
+    "createdDate": "2026-05-16T16:51:25.000Z",
+    "details": {
+      "componentSuccesses": [
+        {
+          "changed": true,
+          "componentType": "Flow",
+          "created": true,
+          "createdDate": "2026-05-16T16:51:27.000Z",
+          "deleted": false,
+          "fileName": "flows/Template_Version_Approval.flow",
+          "fullName": "Template_Version_Approval",
+          "id": "301Nq00001PmwNXIAZ",
+          "success": true
+        },
+        {
+          "changed": true,
+          "componentType": "",
+          "created": false,
+          "createdDate": "2026-05-16T16:51:28.000Z",
+          "deleted": false,
+          "fileName": "package.xml",
+          "fullName": "package.xml",
+          "success": true
+        }
+      ],
+      "runTestResult": {
+        "numFailures": 0,
+        "numTestsRun": 0,
+        "totalTime": 0,
+        "codeCoverage": [],
+        "codeCoverageWarnings": [],
+        "failures": [],
+        "flowCoverage": [],
+        "flowCoverageWarnings": [],
+        "successes": []
+      },
+      "componentFailures": []
+    },
+    "done": true,
+    "id": "0AfNq00000XL0GXKA1",
+    "ignoreWarnings": false,
+    "lastModifiedDate": "2026-05-16T16:51:28.000Z",
+    "numberComponentErrors": 0,
+    "numberComponentsDeployed": 1,
+    "numberComponentsTotal": 1,
+    "numberFiles": "3",
+    "numberTestErrors": 0,
+    "numberTestsCompleted": 0,
+    "numberTestsTotal": 0,
+    "rollbackOnError": true,
+    "runTestsEnabled": false,
+    "startDate": "2026-05-16T16:51:25.000Z",
+    "status": "Succeeded",
+    "success": true,
+    "zipSize": 1380,
+    "files": [
+      {
+        "fullName": "Template_Version_Approval",
+        "type": "Flow",
+        "state": "Created",
+        "filePath": "C:\\Users\\m0gul\\Documents\\meditrinaPOCsandbox\\archonJiraDemoOrg\\force-app\\main\\default\\flows\\Template_Version_Approval.flow-meta.xml"
+      }
+    ],
+    "zipFileCount": 2,
+    "deployUrl": "https://openwacca--pdf.sandbox.my.salesforce.com/lightning/setup/DeployStatus/page?address=%2Fchangemgmt%2FmonitorDeploymentsDetails.apexp%3FasyncId%3D0AfNq00000XL0GXKA1%26retURL%3D%252Fchangemgmt%252FmonitorDeployment.apexp"
+  },
+  "warnings": []
+}

@@ -1,0 +1,30 @@
+{
+  "family": "sf-apex-change",
+  "status": "success",
+  "ticket": "GRIM-52",
+  "sub_type": "create-class",
+  "scope": "small",
+  "files_changed_actual": [
+    {"path": "force-app/main/default/classes/TemplateVersionApprovalHandler.cls", "operation": "add"},
+    {"path": "force-app/main/default/classes/TemplateVersionApprovalHandler.cls-meta.xml", "operation": "add"},
+    {"path": "force-app/main/default/classes/TemplateVersionApprovalHandler_Test.cls", "operation": "add"},
+    {"path": "force-app/main/default/classes/TemplateVersionApprovalHandler_Test.cls-meta.xml", "operation": "add"}
+  ],
+  "validation_results": {
+    "deploy": "pass",
+    "tests": "pass (5/5)",
+    "coverage": {"TemplateVersionApprovalHandler": 88},
+    "destructive": "pass",
+    "fls_crud": "n/a (queries Template_Mapping__c — system context via Flow invocation; with sharing applied)",
+    "overall": "pass"
+  },
+  "doc_updates": [
+    "docs/objects/Template_Mapping__c.md (added Apex handler row)"
+  ],
+  "errors": [],
+  "notes": [
+    "First deploy failed with 'Unexpected token: in' — `in` is a reserved Apex keyword (loop variable in `for (x in list)`). Renamed the loop variable to `req`. Second deploy passed.",
+    "@TestSetup builds 1 Document_Template__c + 2 Template_Version__c (Draft) + 4 Template_Mapping__c (one pre-stamped) — used by all 4 functional tests. Bulk test inserts 200 more versions × 2 mappings within Test.startTest().",
+    "Public API: TemplateVersionApprovalHandler.stampApproval(List<Input>) where Input is a wrapper with @InvocableVariable templateVersionId. Wrapper required because Flow's Apex Action only passes named fields."
+  ]
+}

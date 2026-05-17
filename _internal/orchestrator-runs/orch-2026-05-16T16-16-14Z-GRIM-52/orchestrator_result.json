@@ -1,0 +1,11 @@
+{
+  "orchestrator_run_id": "orch-2026-05-16T16-16-14Z-GRIM-52",
+  "ticket": "GRIM-52",
+  "overall_result": "success",
+  "completed_families": ["sf-metadata-change", "sf-apex-change", "sf-flow-change"],
+  "failed_family": null,
+  "failed_reason": null,
+  "families_count": 3,
+  "ordered_families": ["sf-metadata-change", "sf-apex-change", "sf-flow-change"],
+  "order_deviation_from_default": "ADR-0017 default is metadata→flow→apex; this run used metadata→apex→flow because the Flow invokes Apex via @InvocableMethod (Apex must exist first)."
+}

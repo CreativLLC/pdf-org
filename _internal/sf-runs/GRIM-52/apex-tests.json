@@ -1,0 +1,273 @@
+ »   Warning: @salesforce/cli update available from 2.126.4 to 2.134.6.
+{
+  "result": {
+    "summary": {
+      "failRate": "0%",
+      "failing": 0,
+      "hostname": "https://openwacca--pdf.sandbox.my.salesforce.com",
+      "orgId": "00DNq00000LBtgDMAT",
+      "outcome": "Passed",
+      "passRate": "100%",
+      "passing": 5,
+      "skipped": 0,
+      "testRunId": "707Nq00007spSqB",
+      "testStartTime": "2026-05-16T16:48:56.000Z",
+      "testsRan": 5,
+      "userId": "00530000005oGYhAAM",
+      "username": "jordan.howard@openwacca.com.pdf",
+      "commandTime": "122 ms",
+      "testExecutionTime": "3477 ms",
+      "testTotalTime": "3730 ms",
+      "orgWideCoverage": "17%",
+      "testRunCoverage": "88%"
+    },
+    "tests": [
+      {
+        "Id": "07MNq00000ayDvMMAU",
+        "QueueItemId": "709Nq00000Vft3VIAR",
+        "StackTrace": null,
+        "Message": null,
+        "AsyncApexJobId": "707Nq00007spSqBIAU",
+        "MethodName": "stampApproval_bulk200versions_singleSoqlSingleDml",
+        "Outcome": "Pass",
+        "ApexClass": {
+          "Id": "01pNq00000XbzfqIAB",
+          "Name": "TemplateVersionApprovalHandler_Test",
+          "NamespacePrefix": null
+        },
+        "RunTime": 3316,
+        "FullName": "TemplateVersionApprovalHandler_Test.stampApproval_bulk200versions_singleSoqlSingleDml"
+      },
+      {
+        "Id": "07MNq00000ayDvNMAU",
+        "QueueItemId": "709Nq00000Vft3VIAR",
+        "StackTrace": null,
+        "Message": null,
+        "AsyncApexJobId": "707Nq00007spSqBIAU",
+        "MethodName": "stampApproval_emptyInput_noOp",
+        "Outcome": "Pass",
+        "ApexClass": {
+          "Id": "01pNq00000XbzfqIAB",
+          "Name": "TemplateVersionApprovalHandler_Test",
+          "NamespacePrefix": null
+        },
+        "RunTime": 8,
+        "FullName": "TemplateVersionApprovalHandler_Test.stampApproval_emptyInput_noOp"
+      },
+      {
+        "Id": "07MNq00000ayDvOMAU",
+        "QueueItemId": "709Nq00000Vft3VIAR",
+        "StackTrace": null,
+        "Message": null,
+        "AsyncApexJobId": "707Nq00007spSqBIAU",
+        "MethodName": "stampApproval_singleVersion_skipsAlreadyStamped",
+        "Outcome": "Pass",
+        "ApexClass": {
+          "Id": "01pNq00000XbzfqIAB",
+          "Name": "TemplateVersionApprovalHandler_Test",
+          "NamespacePrefix": null
+        },
+        "RunTime": 97,
+        "FullName": "TemplateVersionApprovalHandler_Test.stampApproval_singleVersion_skipsAlreadyStamped"
+      },
+      {
+        "Id": "07MNq00000ayDvPMAU",
+        "QueueItemId": "709Nq00000Vft3VIAR",
+        "StackTrace": null,
+        "Message": null,
+        "AsyncApexJobId": "707Nq00007spSqBIAU",
+        "MethodName": "stampApproval_singleVersion_stampsAllUnstamped",
+        "Outcome": "Pass",
+        "ApexClass": {
+          "Id": "01pNq00000XbzfqIAB",
+          "Name": "TemplateVersionApprovalHandler_Test",
+          "NamespacePrefix": null
+        },
+        "RunTime": 56,
+        "FullName": "TemplateVersionApprovalHandler_Test.stampApproval_singleVersion_stampsAllUnstamped"
+      }
+    ],
+    "coverage": {
+      "coverage": [
+        {
+          "id": "01pNq00000XbzfpIAB",
+          "name": "TemplateVersionApprovalHandler",
+          "totalLines": 17,
+          "lines": {
+            "13": 1,
+            "14": 1,
+            "15": 1,
+            "17": 1,
+            "18": 1,
+            "19": 1,
+            "20": 1,
+            "23": 1,
+            "24": 0,
+            "27": 1,
+            "30": 1,
+            "34": 1,
+            "35": 0,
+            "38": 1,
+            "39": 1,
+            "40": 1,
+            "42": 1
+          },
+          "totalCovered": 15,
+          "coveredPercent": 88
+        }
+      ],
+      "records": [
+        {
+          "ApexTestClass": {
+            "Id": "07MNq00000ayDvMMAU",
+            "Name": "TemplateVersionApprovalHandler_Test"
+          },
+          "Coverage": {
+            "coveredLines": [
+              13,
+              14,
+              17,
+              18,
+              19,
+              20,
+              23,
+              27,
+              30,
+              34,
+              38,
+              39,
+              40,
+              42
+            ],
+            "uncoveredLines": [
+              15,
+              24,
+              35
+            ]
+          },
+          "TestMethodName": "stampApproval_bulk200versions_singleSoqlSingleDml",
+          "NumLinesCovered": 14,
+          "ApexClassOrTrigger": {
+            "Id": "01pNq00000XbzfpIAB",
+            "Name": "TemplateVersionApprovalHandler"
+          },
+          "NumLinesUncovered": 3
+        },
+        {
+          "ApexTestClass": {
+            "Id": "07MNq00000ayDvNMAU",
+            "Name": "TemplateVersionApprovalHandler_Test"
+          },
+          "Coverage": {
+            "coveredLines": [
+              13,
+              14,
+              15
+            ],
+            "uncoveredLines": [
+              17,
+              18,
+              19,
+              20,
+              23,
+              24,
+              27,
+              30,
+              34,
+              35,
+              38,
+              39,
+              40,
+              42
+            ]
+          },
+          "TestMethodName": "stampApproval_emptyInput_noOp",
+          "NumLinesCovered": 3,
+          "ApexClassOrTrigger": {
+            "Id": "01pNq00000XbzfpIAB",
+            "Name": "TemplateVersionApprovalHandler"
+          },
+          "NumLinesUncovered": 14
+        },
+        {
+          "ApexTestClass": {
+            "Id": "07MNq00000ayDvOMAU",
+            "Name": "TemplateVersionApprovalHandler_Test"
+          },
+          "Coverage": {
+            "coveredLines": [
+              13,
+              14,
+              17,
+              18,
+              19,
+              20,
+              23,
+              27,
+              30,
+              34,
+              38,
+              39,
+              40,
+              42
+            ],
+            "uncoveredLines": [
+              15,
+              24,
+              35
+            ]
+          },
+          "TestMethodName": "stampApproval_singleVersion_skipsAlreadyStamped",
+          "NumLinesCovered": 14,
+          "ApexClassOrTrigger": {
+            "Id": "01pNq00000XbzfpIAB",
+            "Name": "TemplateVersionApprovalHandler"
+          },
+          "NumLinesUncovered": 3
+        },
+        {
+          "ApexTestClass": {
+            "Id": "07MNq00000ayDvPMAU",
+            "Name": "TemplateVersionApprovalHandler_Test"
+          },
+          "Coverage": {
+            "coveredLines": [
+              13,
+              14,
+              17,
+              18,
+              19,
+              20,
+              23,
+              27,
+              30,
+              34,
+              38,
+              39,
+              40,
+              42
+            ],
+            "uncoveredLines": [
+              15,
+              24,
+              35
+            ]
+          },
+          "TestMethodName": "stampApproval_singleVersion_stampsAllUnstamped",
+          "NumLinesCovered": 14,
+          "ApexClassOrTrigger": {
+            "Id": "01pNq00000XbzfpIAB",
+            "Name": "TemplateVersionApprovalHandler"
+          },
+          "NumLinesUncovered": 3
+        }
+      ],
+      "summary": {
+        "totalLines": 17,
+        "coveredLines": 15,
+        "orgWideCoverage": "17%",
+        "testRunCoverage": "88%"
+      }
+    }
+  }
+}

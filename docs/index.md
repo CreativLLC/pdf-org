@@ -5,6 +5,7 @@ last_updated: 2026-05-15
 last_updated_by: drew.smith@openwacca.com
 related_tickets:
   - GRIM-50
+  - GRIM-52
 related_docs: [README.md]
 ---
 
@@ -94,7 +95,9 @@ Derived business-facing layer (one doc per cross-cutting feature). 6 features do
 
 ## Flow index
 
-*No declarative Flows are present in this engagement's source.*
+| Flow | Description |
+|---|---|
+| [`Template_Version_Approval`](./flows/Template_Version_Approval.md) | Record-triggered Flow on `Template_Version__c`. When `Status` transitions to `Approved`, invokes `TemplateVersionApprovalHandler` to stamp `Approved_At__c` on every related `Template_Mapping__c` that doesn't already carry a stamp. |
 
 ## Integration index
 

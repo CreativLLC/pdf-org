@@ -1,20 +1,22 @@
 ---
 title: "Template_Version__c"
 audience: public
-last_updated: 2026-05-15
+last_updated: 2026-05-16
 last_updated_by: drew.smith@openwacca.com
-related_tickets: []
+related_tickets:
+  - GRIM-52
 related_docs:
   - Document_Template__c.md
   - Template_Mapping__c.md
   - ContentVersion.md
+  - ../flows/Template_Version_Approval.md
 ---
 
 # `Template_Version__c`
 
 ## Purpose
 
-A revision of a [`Document_Template__c`](Document_Template__c.md). Holds the actual template body as JSON in `Definition_Json__c` (or, when it exceeds 128KB, in a `ContentVersion` titled `definition.json` linked to this record). Multiple versions per template are normal; which version renders for a given source record is decided by [`Template_Mapping__c`](Template_Mapping__c.md) rules at generate time. Lifecycle states are `Draft` → `Published` → `Archived`; only `Published` versions are selectable by mapping rules.
+A revision of a [`Document_Template__c`](Document_Template__c.md). Holds the actual template body as JSON in `Definition_Json__c` (or, when it exceeds 128KB, in a `ContentVersion` titled `definition.json` linked to this record). Multiple versions per template are normal; which version renders for a given source record is decided by [`Template_Mapping__c`](Template_Mapping__c.md) rules at generate time. Lifecycle states are `Draft` → `Published` → `Approved` → `Archived`. Only `Published` versions are selectable by mapping rules; `Approved` is an audit milestone — when a version transitions to `Approved`, a record-triggered Flow invokes Apex that stamps `Approved_At__c` on every related [`Template_Mapping__c`](Template_Mapping__c.md) that doesn't already carry a stamp.
 
 ## Type and origin
 
@@ -33,7 +35,7 @@ A revision of a [`Document_Template__c`](Document_Template__c.md). Holds the act
 |---|---|---|---|---|
 | `Document_Template__c` | Document Template | Master-Detail → `Document_Template__c` | Yes | Parent template. |
 | `Definition_Json__c` | Definition JSON | Long Text Area(131072) | No | Template body — page properties, root row/col tree, text spans, merge tokens, conditional rules, tables. Read and rendered by `PdfTemplateService.build`. If blank, the service falls back to the spillover file (see Constraints). |
-| `Status__c` | Status | Picklist (restricted) | Yes | `Draft` = editable in the builder, not pickable by mapping rules; `Published` = locked, pickable; `Archived` = hidden from selection but kept for historical PDFs. Default `Draft`. |
+| `Status__c` | Status | Picklist (restricted) | Yes | `Draft` = editable in the builder, not pickable by mapping rules; `Published` = locked, pickable; `Approved` = audit milestone, triggers the Approval Flow → stamps `Approved_At__c` on related mappings; `Archived` = hidden from selection but kept for historical PDFs. Default `Draft`. |
 | `Revision_Number__c` | Revision Number | Number(4,0) | No | Numeric revision (1, 2, 3…). Used by `Template_Mapping__c` rules to map source records whose own `Revision_Number__c` (or equivalent) signals which version applies. |
 | `Sample_Record_Id__c` | Sample Record Id | Text(18) | No | Last-used preview record ID for builder convenience. Stored as plain Text rather than a polymorphic reference because the target SObject varies per template. |
 
@@ -69,7 +71,7 @@ No Apex triggers. Read/write through controllers:
 
 ## Flows touching this object
 
-None.
+- **[`Template_Version_Approval`](../flows/Template_Version_Approval.md)** — record-triggered (after-save). Fires when `Status__c` transitions to `Approved`. Invokes `TemplateVersionApprovalHandler.stampApproval` to stamp `Approved_At__c` on related `Template_Mapping__c` records that don't already carry a stamp.
 
 ## Integrations referencing this object
 

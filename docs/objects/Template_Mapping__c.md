@@ -1,12 +1,14 @@
 ---
 title: "Template_Mapping__c"
 audience: public
-last_updated: 2026-05-15
+last_updated: 2026-05-16
 last_updated_by: drew.smith@openwacca.com
-related_tickets: []
+related_tickets:
+  - GRIM-52
 related_docs:
   - Document_Template__c.md
   - Template_Version__c.md
+  - ../flows/Template_Version_Approval.md
 ---
 
 # `Template_Mapping__c`
@@ -36,6 +38,7 @@ A rule that picks which [`Template_Version__c`](Template_Version__c.md) renders 
 | `Match_Field_Api_Name__c` | Match Field API Name | Text(80) | No | API name of a field on the source record (e.g., `Revision_Number__c`) to test against `Match_Value__c`. Blank with `Match_Operator__c = Default` makes this the catch-all. |
 | `Match_Operator__c` | Match Operator | Picklist (restricted) | Yes | `Equals` (default), `In` (comma-separated `Match_Value__c`), `NotNull`, `Default` (always matches). |
 | `Match_Value__c` | Match Value | Text(255) | No | Value to compare against. For `In`, comma-separated. Ignored for `NotNull` and `Default`. |
+| `Approved_At__c` | Approved At | DateTime | No | Timestamp when the parent `Template_Version__c` first transitioned to `Status=Approved`. Stamped by `TemplateVersionApprovalHandler` (invocable from the Template Version Approval Flow). Never overwritten once set. |
 
 ## Relationships
 
@@ -58,6 +61,7 @@ None — operator/value coherence is enforced in Apex (`PdfGeneratorController.m
 
 No Apex triggers.
 
+- **`TemplateVersionApprovalHandler.stampApproval`** (`@InvocableMethod`) accepts a list of `Template_Version__c` IDs and updates `Approved_At__c = Datetime.now()` on every `Template_Mapping__c` whose `Template_Version__c IN :ids AND Approved_At__c = NULL`. Idempotent — never overwrites an existing stamp. Invoked by the Template Version Approval Flow (see [Flows](#flows-touching-this-object)).
 - **`PdfGeneratorController.resolveVersion`** is the only reader:
   1. SOQL: `SELECT Id, Template_Version__c, Record_Type_Developer_Name__c, Match_Field_Api_Name__c, Match_Operator__c, Match_Value__c, Priority__c FROM Template_Mapping__c WHERE Document_Template__c = :dt.Id ORDER BY Priority__c ASC NULLS LAST`.
   2. For each rule, evaluates record-type filter (when set), then operator:
@@ -69,7 +73,7 @@ No Apex triggers.
 
 ## Flows touching this object
 
-None.
+- **[`Template_Version_Approval`](../flows/Template_Version_Approval.md)** — fires on the parent `Template_Version__c` when its `Status` becomes `Approved`, then cascades the approval timestamp to mappings via `TemplateVersionApprovalHandler.stampApproval`. This Flow is the only writer of `Approved_At__c` on this object.
 
 ## Integrations referencing this object
 

@@ -1,0 +1,28 @@
+{
+  "family": "sf-flow-change",
+  "status": "success",
+  "ticket": "GRIM-52",
+  "sub_type": "create-flow",
+  "scope": "small",
+  "files_changed_actual": [
+    {"path": "force-app/main/default/flows/Template_Version_Approval.flow-meta.xml", "operation": "add"}
+  ],
+  "validation_results": {
+    "deploy": "pass (after fixing picklist-in-formula error)",
+    "activation": "pass (Flow shipped Active)",
+    "references": "pass (apex action + picklist value + field all resolve)",
+    "regression_tests": "pass (5/5 TemplateVersionApprovalHandler_Test)",
+    "overall": "pass"
+  },
+  "doc_updates": [
+    "docs/flows/Template_Version_Approval.md (new)",
+    "docs/objects/Template_Version__c.md (Flows section + related_docs)",
+    "docs/objects/Template_Mapping__c.md (Flows section)",
+    "docs/index.md (Flow index populated for the first time)"
+  ],
+  "errors": [],
+  "notes": [
+    "First deploy failed: filterFormula used `{!$Record.Status__c} = 'Approved'` which is invalid for picklist fields. Salesforce requires ISPICKVAL() or TEXT(). Fixed to ISPICKVAL({!$Record.Status__c}, 'Approved'). Second deploy passed.",
+    "check-flow-references.sh has its own Python syntax error in the shipped script (return Trueimport json mashed together on one line). Doesn't block — script exited 0. Worth flagging upstream via /sf-feedback."
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "family": "sf-metadata-change",
+  "status": "success",
+  "ticket": "GRIM-52",
+  "sub_type": "create-picklist-value",
+  "scope": "small",
+  "files_changed_actual": [
+    {"path": "force-app/main/default/objects/Template_Version__c/fields/Status__c.field-meta.xml", "operation": "modify", "diff": "+Approved value"},
+    {"path": "force-app/main/default/objects/Template_Mapping__c/fields/Approved_At__c.field-meta.xml", "operation": "add"}
+  ],
+  "validation_results": {
+    "deploy": "pass",
+    "reference_impact": "pass",
+    "fls_coverage": "pending-followup-permission-change",
+    "overall": "pass"
+  },
+  "doc_updates": [
+    "docs/objects/Template_Version__c.md",
+    "docs/objects/Template_Mapping__c.md"
+  ],
+  "errors": []
+}
